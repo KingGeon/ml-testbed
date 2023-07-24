@@ -1,6 +1,6 @@
 hydra:
   run:
-    dir: /home/jaewoo/Practices/deeplearnings
+    dir: /mnt/HDD/jaewoo/practices/deeplearnings
   sweep:
     dir: ${paths.log_dir}/${task_name}/multiruns/${now:%Y-%m-%d}_${now:%H-%M-%S}
     subdir: ${hydra.job.num}
@@ -118,15 +118,15 @@ hydra:
   output_subdir: .hydra
   overrides:
     hydra:
-    - hydra.run.dir="/home/jaewoo/Practices/deeplearnings"
-    - hydra.job.name=train_ddp_process_1
+    - hydra.run.dir="/mnt/HDD/jaewoo/practices/deeplearnings"
+    - hydra.job.name=train_ddp_process_5
     - hydra.mode=RUN
     task:
-    - experiment=cifar10/googlenet
+    - experiment=mnist/googlenet
   job:
-    name: train_ddp_process_1
+    name: train_ddp_process_5
     chdir: null
-    override_dirname: experiment=cifar10/googlenet
+    override_dirname: experiment=mnist/googlenet
     id: ???
     num: ???
     config_name: train.yaml
@@ -140,12 +140,12 @@ hydra:
   runtime:
     version: 1.3.2
     version_base: '1.3'
-    cwd: /home/jaewoo/Practices/deeplearnings
+    cwd: /mnt/HDD/jaewoo/practices/deeplearnings
     config_sources:
     - path: hydra.conf
       schema: pkg
       provider: hydra
-    - path: /home/jaewoo/Practices/deeplearnings/configs
+    - path: /mnt/HDD/jaewoo/practices/deeplearnings/configs
       schema: file
       provider: main
     - path: hydra_plugins.hydra_colorlog.conf
@@ -154,12 +154,12 @@ hydra:
     - path: ''
       schema: structured
       provider: schema
-    output_dir: /home/jaewoo/Practices/deeplearnings
+    output_dir: /mnt/HDD/jaewoo/practices/deeplearnings
     choices:
       debug: null
       local: default.yaml
       hparams_search: null
-      experiment: cifar10/googlenet
+      experiment: mnist/googlenet
       hydra: default.yaml
       extras: default.yaml
       paths: default.yaml

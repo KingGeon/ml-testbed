@@ -4,37 +4,29 @@
 # python train.py experiment=example
 
 defaults:
-  - override /data: mnist.yaml
-  - override /model: mnist.yaml
+  - override /data: cifar10.yaml
+  - override /model: resnet.yaml
   - override /callbacks: default.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["mnist", "simple_dense_net"]
+tags: ["cifar10", "resnet"]
 
 seed: 12345
 
 trainer:
   min_epochs: 10
-  max_epochs: 10
+  max_epochs: 200
   gradient_clip_val: 0.5
-
-model:
-  optimizer:
-    lr: 0.002
-  net:
-    lin1_size: 128
-    lin2_size: 256
-    lin3_size: 64
-
-data:
-  batch_size: 64
+  accelerator: gpu
+  devices: [0]
 
 logger:
   wandb:
-    tags: ${tags}
-    group: "mnist"
-  aim:
-    experiment: "mnist"
+    project: "CIFAR10-ResNet"
+    tags: ['ResNet']
+    name: "ResNet"
+
+

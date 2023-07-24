@@ -4,7 +4,7 @@
 # python train.py experiment=example
 
 defaults:
-  - override /data: cifar10.yaml
+  - override /data: mnist.yaml
   - override /model: googlenet.yaml
   - override /callbacks: default.yaml
   - override /trainer: default.yaml
@@ -12,7 +12,7 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["cifar10", "googlenet"]
+tags: ["mnist", "googlenet"]
 
 seed: 12345
 
@@ -23,6 +23,6 @@ trainer:
 
 logger:
   wandb:
-    project: "CIFAR10-GoogleNet"
-    tags: ['GoogleNet']
-    name: "GoogleNet"
+    project: "MNIST-GoogleNet"
+    tags: ['CNN']
+    name: "CNN"

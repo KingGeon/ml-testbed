@@ -5,24 +5,36 @@
 
 defaults:
   - override /data: cifar10.yaml
-  - override /model: googlenet.yaml
+  - override /model: mlp.yaml
   - override /callbacks: default.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["cifar10", "googlenet"]
+tags: ["cifar10", "simple_dense_net"]
 
 seed: 12345
 
 trainer:
   min_epochs: 10
-  max_epochs: 200
+  max_epochs: 10
   gradient_clip_val: 0.5
+
+model:
+  optimizer:
+    lr: 0.002
+  net:
+    input_size: 3072
+    lin1_size: 128
+    lin2_size: 256
+    lin3_size: 64
+
+data:
+  batch_size: 128
 
 logger:
   wandb:
-    project: "CIFAR10-GoogleNet"
-    tags: ['GoogleNet']
-    name: "GoogleNet"
+    project: "CIFAR10-MLP"
+    tags: ['MLP']
+    name: "MLP"

@@ -46,7 +46,7 @@ class ClassificationModule(LightningModule):
         self.train_loss(loss)
         self.train_acc(preds, targets)
         self.log('train/loss', self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log('train/acc', self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('train/acc', self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
         return loss
     
     def on_train_epoch_end(self):

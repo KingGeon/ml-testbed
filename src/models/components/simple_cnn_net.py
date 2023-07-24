@@ -32,6 +32,14 @@ class SimpleCNN(nn.Module):
                                                        hidden_dim=hidden_dim_list[i+1]))
         self.classifier = nn.Linear(hidden_dim_list[-1], output_size)
         
+    def _init_params(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity=self.hparams.act_fn_name)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+        
     def forward(self, x):
         x = self.encoder(x)
         x = x.mean(dim = (-1, -2))

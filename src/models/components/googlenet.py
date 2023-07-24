@@ -79,6 +79,16 @@ class GoogleNet(nn.Module):
         x = self.model(x)
         x = x.squeeze()
         return self.classifier(x)
+            
+    def _init_params(self):
+        # Based on our discussion in Tutorial 4, we should initialize the convolutions according to the activation function
+        # Fan-out focuses on the gradient distribution, and is commonly used in ResNets
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity=self.hparams.act_fn_name)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
         
         
 
