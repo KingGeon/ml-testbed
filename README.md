@@ -15,9 +15,11 @@
 ## 📌  Introduction
 
 원하는 experiment 환경을 넣어 모델 실험을 수행 및 로깅
-
-+ wandb 가입 요망
++ [pytorch lighning](https://www.pytorchlightning.ai/tutorials) / [hydra-core](https://hydra.cc/docs/tutorials/intro/) tutorial 숙지 필수
++ [wandb](https://wandb.ai/) 가입 요망
 + 코드 신규작성 / 수정 시, linting 에 유의
+
+### 실험 수행 예시
 
 ```
 python src/train.py experiment=cifar/resnet
@@ -32,4 +34,4 @@ python src/train.py experiment=cifar/resnet
 + MLP
 + CNN
 + GoogleNet (Inception Module)
-+ ResNet, Previous Activated ResNet
++ ResNet, Pre-Activation ResNet
