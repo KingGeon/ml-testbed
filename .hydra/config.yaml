@@ -1,23 +1,25 @@
 task_name: train
 tags:
-- dev
+- cifar10
+- googlenet
 train: true
 test: true
 compile: false
 ckpt_path: null
-seed: null
+seed: 12345
 data:
-  _target_: src.data.mnist_datamodule.MNISTDataModule
+  _target_: src.data.cifar10_datamodule.CIFAR10DataModule
   data_dir: ${paths.data_dir}
-  batch_size: 128
+  batch_size: 1024
   train_val_test_split:
-  - 55000
+  - 45000
   - 5000
   - 10000
-  num_workers: 0
-  pin_memory: false
+  num_workers: 24
+  pin_memory: true
+  persistent_workers: true
 model:
-  _target_: src.models.mnist_module.MNISTLitModule
+  _target_: src.models.classification_module.ClassificationModule
   optimizer:
     _target_: torch.optim.Adam
     _partial_: true
@@ -30,11 +32,7 @@ model:
     factor: 0.1
     patience: 10
   net:
-    _target_: src.models.components.simple_dense_net.SimpleDenseNet
-    input_size: 784
-    lin1_size: 64
-    lin2_size: 128
-    lin3_size: 64
+    _target_: src.models.components.googlenet.GoogleNet
     output_size: 10
 callbacks:
   model_checkpoint:
@@ -69,21 +67,33 @@ callbacks:
     max_depth: -1
   rich_progress_bar:
     _target_: lightning.pytorch.callbacks.RichProgressBar
+logger:
+  wandb:
+    _target_: lightning.pytorch.loggers.wandb.WandbLogger
+    save_dir: ${paths.output_dir}
+    offline: false
+    id: null
+    anonymous: null
+    project: CIFAR10-CNN
+    log_model: false
+    prefix: ''
+    group: ''
+    tags:
+    - CNN
+    job_type: ''
+    name: CNN
 trainer:
   _target_: lightning.pytorch.trainer.Trainer
   default_root_dir: ${paths.output_dir}
-  min_epochs: 1
+  min_epochs: 10
   max_epochs: 10
   accelerator: gpu
   devices:
   - 0
   - 1
-  - 2
-  - 3
-  - 4
-  - 5
   check_val_every_n_epoch: 1
   deterministic: false
+  gradient_clip_val: 0.5
 paths:
   root_dir: ${oc.env:PROJECT_ROOT}
   data_dir: ${paths.root_dir}/data/
