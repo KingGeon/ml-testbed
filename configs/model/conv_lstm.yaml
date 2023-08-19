@@ -1,0 +1,33 @@
+_target_: src.models.classification_module.ClassificationModule
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.005
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10
+
+net:
+  _target_: src.models.components.conv_lstm.CONV_LSTM
+  input_dim: 8192
+  in_channel: 3
+  conv1_channel:  32
+  conv2_channel:  64
+  conv3_channel:  64
+  conv4_channel:  32
+  conv1_kernel_size:  256
+  conv2_kernel_size:  256
+  conv3_kernel_size:  80
+  conv4_kernel_size:  80
+  pool_kernel_size:  2
+  drop_out:  0.1
+  hidden_dim_list: [256, 64, 16]
+  output_size: 4
+  
+num_classes: 4

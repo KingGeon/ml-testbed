@@ -10,15 +10,16 @@ class ClassificationModule(LightningModule):
     def __init__(self,
                  net: torch.nn.Module,
                  optimizer: torch.optim.Optimizer,
-                 scheduler: torch.optim.lr_scheduler):
+                 scheduler: torch.optim.lr_scheduler,
+                 num_classes: int = 4):
         super().__init__()
         self.save_hyperparameters(logger=False) # self.hparams activation
         self.net = net
         self.criterion = torch.nn.CrossEntropyLoss()
         
-        self.train_acc = Accuracy(task="multiclass", num_classes=10)
-        self.val_acc = Accuracy(task="multiclass", num_classes=10)
-        self.test_acc = Accuracy(task="multiclass", num_classes=10)
+        self.train_acc = Accuracy(task="multiclass", num_classes=num_classes)
+        self.val_acc = Accuracy(task="multiclass", num_classes=num_classes)
+        self.test_acc = Accuracy(task="multiclass", num_classes=num_classes)
 
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
