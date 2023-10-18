@@ -1,0 +1,116 @@
+from torch import nn
+import torch
+from conv_lstm_regressor import *
+
+class StackedConvLSTM(nn.Module):
+    def __init__(self):
+        super(StackedConvLSTM, self).__init__()
+        self.convlstm = CONV_LSTM()
+        self.lstm = nn.LSTM(input_size=40, hidden_size=10, batch_first=True, bidirectional = False)
+        self.dropout = nn.Dropout(0.5)
+        self.lin1 = nn.Linear(10,1)
+    def forward(self, x):
+        cl1 = self.convlstm(x[:,0,:,:])
+        cl2 = self.convlstm(x[:,1,:,:])
+        cl3 = self.convlstm(x[:,2,:,:])
+        cl4 = self.convlstm(x[:,3,:,:])
+        cl5 = self.convlstm(x[:,4,:,:])
+        cl6 = self.convlstm(x[:,5,:,:])
+        cl7 = self.convlstm(x[:,6,:,:])
+        cl8 = self.convlstm(x[:,7,:,:])
+        cl9 = self.convlstm(x[:,8,:,:])
+        cl10 = self.convlstm(x[:,9,:,:])
+        cl11 = self.convlstm(x[:,10,:,:])
+        cl12 = self.convlstm(x[:,11,:,:])
+        cl13 = self.convlstm(x[:,12,:,:])
+        cl14 = self.convlstm(x[:,13,:,:])
+        cl15 = self.convlstm(x[:,14,:,:])
+        cl16 = self.convlstm(x[:,15,:,:])
+        cl17 = self.convlstm(x[:,16,:,:])
+        cl18 = self.convlstm(x[:,17,:,:])
+        cl19 = self.convlstm(x[:,18,:,:])
+        cl20 = self.convlstm(x[:,19,:,:])
+        cl21 = self.convlstm(x[:,20,:,:])
+        cl22 = self.convlstm(x[:,21,:,:])
+        cl23 = self.convlstm(x[:,22,:,:])
+        cl24 = self.convlstm(x[:,23,:,:])
+        cl25 = self.convlstm(x[:,24,:,:])
+        cl26 = self.convlstm(x[:,25,:,:])
+        cl27 = self.convlstm(x[:,26,:,:])
+        cl28 = self.convlstm(x[:,27,:,:])
+        cl29 = self.convlstm(x[:,28,:,:])
+        cl30 = self.convlstm(x[:,29,:,:])
+        cl31 = self.convlstm(x[:,30,:,:])
+        cl32 = self.convlstm(x[:,31,:,:])
+        cl33 = self.convlstm(x[:,32,:,:])
+        cl34 = self.convlstm(x[:,33,:,:])
+        cl35 = self.convlstm(x[:,34,:,:])
+        cl36 = self.convlstm(x[:,35,:,:])
+        cl37 = self.convlstm(x[:,36,:,:])
+        cl38 = self.convlstm(x[:,37,:,:])
+        cl39 = self.convlstm(x[:,38,:,:])
+        cl40 = self.convlstm(x[:,39,:,:])
+       
+        
+        z = torch.cat((cl1,cl2,cl3,cl4,cl5,cl6,cl7,cl8,cl9,cl10,
+                        cl11,cl12,cl13,cl14,cl15,cl16,cl17,cl18,cl19,cl20,
+                        cl21,cl22,cl23,cl24,cl25,cl26,cl27,cl28,cl29,cl30,
+                        cl31,cl32,cl33,cl34,cl35,cl36,cl37,cl38,cl39,cl40),dim = -1)
+        z, _ = self.lstm(z)
+        z = self.dropout(z)
+        z = self.lin1(z)
+        return z
+    def predict(self, x):
+        self.eval()
+        with torch.no_grad():
+            cl1 = self.convlstm(x[:,0,:,:])
+            cl2 = self.convlstm(x[:,1,:,:])
+            cl3 = self.convlstm(x[:,2,:,:])
+            cl4 = self.convlstm(x[:,3,:,:])
+            cl5 = self.convlstm(x[:,4,:,:])
+            cl6 = self.convlstm(x[:,5,:,:])
+            cl7 = self.convlstm(x[:,6,:,:])
+            cl8 = self.convlstm(x[:,7,:,:])
+            cl9 = self.convlstm(x[:,8,:,:])
+            cl10 = self.convlstm(x[:,9,:,:])
+            cl11 = self.convlstm(x[:,10,:,:])
+            cl12 = self.convlstm(x[:,11,:,:])
+            cl13 = self.convlstm(x[:,12,:,:])
+            cl14 = self.convlstm(x[:,13,:,:])
+            cl15 = self.convlstm(x[:,14,:,:])
+            cl16 = self.convlstm(x[:,15,:,:])
+            cl17 = self.convlstm(x[:,16,:,:])
+            cl18 = self.convlstm(x[:,17,:,:])
+            cl19 = self.convlstm(x[:,18,:,:])
+            cl20 = self.convlstm(x[:,19,:,:])
+            cl21 = self.convlstm(x[:,20,:,:])
+            cl22 = self.convlstm(x[:,21,:,:])
+            cl23 = self.convlstm(x[:,22,:,:])
+            cl24 = self.convlstm(x[:,23,:,:])
+            cl25 = self.convlstm(x[:,24,:,:])
+            cl26 = self.convlstm(x[:,25,:,:])
+            cl27 = self.convlstm(x[:,26,:,:])
+            cl28 = self.convlstm(x[:,27,:,:])
+            cl29 = self.convlstm(x[:,28,:,:])
+            cl30 = self.convlstm(x[:,29,:,:])
+            cl31 = self.convlstm(x[:,30,:,:])
+            cl32 = self.convlstm(x[:,31,:,:])
+            cl33 = self.convlstm(x[:,32,:,:])
+            cl34 = self.convlstm(x[:,33,:,:])
+            cl35 = self.convlstm(x[:,34,:,:])
+            cl36 = self.convlstm(x[:,35,:,:])
+            cl37 = self.convlstm(x[:,36,:,:])
+            cl38 = self.convlstm(x[:,37,:,:])
+            cl39 = self.convlstm(x[:,38,:,:])
+            cl40 = self.convlstm(x[:,39,:,:])
+        
+            
+            z = torch.cat((cl1,cl2,cl3,cl4,cl5,cl6,cl7,cl8,cl9,cl10,
+                            cl11,cl12,cl13,cl14,cl15,cl16,cl17,cl18,cl19,cl20,
+                            cl21,cl22,cl23,cl24,cl25,cl26,cl27,cl28,cl29,cl30,
+                            cl31,cl32,cl33,cl34,cl35,cl36,cl37,cl38,cl39,cl40),dim = -1)
+            z, _ = self.lstm(z)
+            z = self.dropout(z)
+            z = self.lin1(z)
+        return z
+    
