@@ -29,7 +29,7 @@ class CustomDatasetWithBandpass(Dataset):
 class Motor_Vibration():
     def __init__(
         self,
-        test_motor_power: List[float] = ["7.5kW","30kW"],
+        test_motor_power: List[float] = ["7.5kW","22kW","30kW"],
         sampling_frequency_before_upsample: int = 4000,
         sampling_frequency_after_upsample: int = 8192,
         fault_type_dict = {"정상": 0,

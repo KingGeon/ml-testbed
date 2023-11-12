@@ -6,7 +6,7 @@ import torch.nn as nn
 from omegaconf import DictConfig
 import time
 import learn2learn as l2l
-from models.components.conv_lstm_classifier import CONV_LSTM_Classifier
+from models.components.conv_lstm_classifier_no_dropout import CONV_LSTM_Classifier
 pyrootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 from src.data.aihub_vibration_meta_taskmodule import Motor_vibration_TaskModule
 from src.meta_learning.meta_utils import accuracy,pairwise_distances_logits,fast_adapt_maml, fast_adapt_proto, fast_adapt_maml_proto
@@ -16,15 +16,12 @@ def main():
     ways=4
     shots=4
     meta_head_lr=0.001
-    meta_tail_lr = 0.001
     meta_feature_lr=0.001
     fast_lr=0.1
     reg_lambda=0
     adapt_steps=5
     meta_bsz=32
     iters=500
-    cuda=1
-    seed=42
     device = "cuda"
 
     cwru = Motor_vibration_TaskModule(ways = ways, shots = shots)
