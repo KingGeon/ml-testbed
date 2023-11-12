@@ -27,22 +27,21 @@ def main():
     seed=42
     device = "cuda"
 
-    cwru = Motor_vibration_TaskModule(ways = ways, shots = shots)
-    cwru.prepare_data()
-    cwru.setup()
-    train_tasks, valid_tasks, test_tasks = cwru.make_tasks()
+    aihub_motor_vibration = Motor_vibration_TaskModule(ways = ways, shots = shots)
+    aihub_motor_vibration.setup()
+    train_tasks, valid_tasks, test_tasks = aihub_motor_vibration.make_tasks()
     
+    pn_test_acc_list = []
     features = CONV_LSTM_Classifier()
-    # for p in  features.parameters():
-    #     print(p.shape)
+        # for p in  features.parameters():
+        #     print(p.shape)
     #features.load_state_dict(torch.load("../best_rca.pth"))
     features.to(device)
     head = torch.nn.Linear(5, ways)
     head = l2l.algorithms.MAML(head, lr=fast_lr)
     head.to(device)
-
+    max_test_accuracy = 0
         # Setup optimization
-    all_parameters = list(features.parameters()) + list(head.parameters())
         
         # optimizer = torch.optim.Adam(all_parameters, lr=meta_lr)
         
@@ -69,47 +68,51 @@ def main():
             
         for task in range(meta_bsz):
             # Compute meta-training loss
-            learner = head.clone()
             batch = train_tasks.sample()
-            evaluation_error, evaluation_accuracy = fast_adapt_maml(batch,
-                                                                learner,
-                                                                features,
-                                                                loss,
-                                                                adapt_steps,
-                                                                shots,
-                                                                ways,
-                                                                device)
+            learner = head.clone()
+            proto_loss, acc = fast_adapt_maml_proto(batch,
+                                                    learner,
+                                                    features,
+                                                    loss,
+                                                    adapt_steps,
+                                                    shots,
+                                                    ways,
+                                                    device)
+            evaluation_error  = proto_loss 
             evaluation_error.backward()
             meta_train_error += evaluation_error.item()
-            meta_train_accuracy += evaluation_accuracy.item()
+            meta_train_accuracy += acc.item() 
 
                 # Compute meta-validation loss
-            learner = head.clone()
             batch = valid_tasks.sample()
-            evaluation_error, evaluation_accuracy = fast_adapt_maml(batch,
-                                                                learner,
-                                                                features,
-                                                                loss,
-                                                                adapt_steps,
-                                                                shots,
-                                                                ways,
-                                                                device)
+          
+        
+            proto_loss, acc = fast_adapt_maml_proto(batch,
+                                                    learner,
+                                                    features,
+                                                    loss,
+                                                    adapt_steps,
+                                                    shots,
+                                                    ways,
+                                                    device)
+            evaluation_error  = proto_loss + evaluation_error
             meta_valid_error += evaluation_error.item()
-            meta_valid_accuracy += evaluation_accuracy.item()
+            meta_valid_accuracy += acc.item()
 
                 # Compute meta-testing loss
-            learner = head.clone()
             batch = test_tasks.sample()
-            evaluation_error, evaluation_accuracy = fast_adapt_maml(batch,
-                                                                learner,
-                                                                features,
-                                                                loss,
-                                                                adapt_steps,
-                                                                shots,
-                                                                ways,
-                                                                device)
+            
+            proto_loss, acc = fast_adapt_maml_proto(batch,
+                                                    learner,
+                                                    features,
+                                                    loss,
+                                                    adapt_steps,
+                                                    shots,
+                                                    ways,
+                                                    device)
+            evaluation_error  = proto_loss + evaluation_error
             meta_test_error += evaluation_error.item()
-            meta_test_accuracy += evaluation_accuracy.item()
+            meta_test_accuracy += acc.item()
             
         training_accuracy[iteration] = meta_train_accuracy / meta_bsz
         test_accuracy[iteration] = meta_test_accuracy / meta_bsz
@@ -123,10 +126,10 @@ def main():
         print('Meta Valid Accuracy', meta_valid_accuracy / meta_bsz)
         print('Meta Test Error', meta_test_error / meta_bsz)
         print('Meta Test Accuracy', meta_test_accuracy / meta_bsz)
-
+        pn_test_acc_list.append(meta_test_accuracy / meta_bsz)
+        if max_test_accuracy < meta_test_accuracy / meta_bsz:
+            max_test_accuracy = meta_test_accuracy / meta_bsz
             # Average the accumulated gradients and optimize
-        for p in all_parameters:
-            p.grad.data.mul_(1.0 / meta_bsz)
                 
         # print('head')
         # for p in list(head.parameters()):
@@ -140,6 +143,7 @@ def main():
         end_time = time.time()
         running_time[iteration] = end_time - start_time
         print('total running time', end_time - start_time)
+        print(max_test_accuracy)
 
 
 

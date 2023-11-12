@@ -41,7 +41,7 @@ def fast_adapt_maml(batch,
     return valid_error, valid_accuracy
 
 
-def fast_adapt_proto(model, batch, ways, shot, metric=None, device=None):
+def fast_adapt_proto(model, batch, ways, shots, metric=None, device=None):
     if metric is None:
         metric = pairwise_distances_logits
     if device is None:
@@ -64,7 +64,7 @@ def fast_adapt_proto(model, batch, ways, shot, metric=None, device=None):
     evaluation_indices = torch.from_numpy(~adaptation_indices)
     adaptation_indices = torch.from_numpy(adaptation_indices)
     support = embeddings[adaptation_indices]
-    support = support.reshape(ways, shot, -1).mean(dim=1)
+    support = support.reshape(ways, shots, -1).mean(dim=1)
     query = embeddings[evaluation_indices]
     labels = labels[evaluation_indices].long()
     logits = pairwise_distances_logits(query, support)
