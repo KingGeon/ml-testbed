@@ -16,9 +16,9 @@ class ClassificationModule(LightningModule):
         self.net = net
         self.criterion = torch.nn.CrossEntropyLoss()
         
-        self.train_acc = Accuracy(task="multiclass", num_classes=10)
-        self.val_acc = Accuracy(task="multiclass", num_classes=10)
-        self.test_acc = Accuracy(task="multiclass", num_classes=10)
+        self.train_acc = Accuracy(task="multiclass", num_classes=5)
+        self.val_acc = Accuracy(task="multiclass", num_classes=5)
+        self.test_acc = Accuracy(task="multiclass", num_classes=5)
 
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
@@ -26,8 +26,8 @@ class ClassificationModule(LightningModule):
 
         self.val_acc_best = MaxMetric()
         
-    def forward(self, x):
-        return self.net(x)
+    def forward(self, x, y):
+        return self.net(x, y)
     
     def on_train_start(self):
         self.val_loss.reset()
@@ -35,11 +35,11 @@ class ClassificationModule(LightningModule):
         self.val_acc_best.reset()
         
     def model_step(self, batch: Any):
-        x, y = batch
-        logits = self.forward(x)
-        loss = self.criterion(logits, y)
+        x, y, z = batch
+        logits = self.forward(x, y)
+        loss = self.criterion(logits, z)
         preds = torch.argmax(logits, dim = 1)
-        return loss, preds, y
+        return loss, preds, z
     
     def training_step(self, batch: Any, batch_idx):
         loss, preds, targets = self.model_step(batch)
