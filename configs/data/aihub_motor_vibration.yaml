@@ -1,7 +1,7 @@
 _target_: src.data.aihub_motor_vibration_datamodule.Motor_Vibration_DataModule
 data_dir: /home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration
 batch_size: 1024
-csv_num_to_use: 2000
+csv_num_to_use: 500
 train_val_split: [0.7, 0.3]
 num_workers: 24
 pin_memory: True
