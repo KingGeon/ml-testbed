@@ -14,7 +14,7 @@ pyrootutils.set_root(path = path,
                      dotenv = True,
                      pythonpath = True)
 from src.data.datasets.aihub_motor_vibraion import Motor_Vibration
-
+from src.utils.meta_utils import FewShotBatchSampler_ProtoNet
 
 class Motor_Vibration_DataModule(LightningDataModule):
     def __init__(self,
@@ -31,6 +31,8 @@ class Motor_Vibration_DataModule(LightningDataModule):
                 csv_num_to_use: int = 500,
                 data_dir: str = "/home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration",
                 train_val_split: Tuple[float, float, float] = [0.7, 0.3],
+                N_WAY = 4,
+                K_SHOT = 4,
                 batch_size: int = 256,
                 num_workers: int = 16,
                 pin_memory: bool = True,
@@ -42,6 +44,8 @@ class Motor_Vibration_DataModule(LightningDataModule):
         self.data_train: Optional[Dataset] = None
         self.data_val: Optional[Dataset] = None
         self.data_test : Optional[Dataset] = None
+        self.N_WAY = N_WAY
+        self.K_SHOT = K_SHOT
         
 
     def setup(self,stage):
@@ -58,7 +62,8 @@ class Motor_Vibration_DataModule(LightningDataModule):
             
     def train_dataloader(self):
         return DataLoader(dataset=self.data_train,
-                          batch_size=self.hparams.batch_size,
+                          batch_sampler=FewShotBatchSampler_ProtoNet(self.data_train.targets, include_query=True, 
+                                                            N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=False, shuffle_once=True),
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers,
@@ -66,7 +71,8 @@ class Motor_Vibration_DataModule(LightningDataModule):
         
     def val_dataloader(self):
         return DataLoader(dataset=self.data_val,
-                          batch_size=self.hparams.batch_size,
+                          batch_sampler=FewShotBatchSampler_ProtoNet(self.data_val.targets, include_query=True, 
+                                                            N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=False, shuffle_once=True),
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers,
@@ -74,7 +80,8 @@ class Motor_Vibration_DataModule(LightningDataModule):
     
     def test_dataloader(self):
         return DataLoader(dataset=self.data_test,
-                          batch_size=self.hparams.batch_size,
+                          batch_sampler=FewShotBatchSampler_ProtoNet(self.data_test.targets, include_query=True, 
+                                                            N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=False, shuffle_once=True),
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers,
