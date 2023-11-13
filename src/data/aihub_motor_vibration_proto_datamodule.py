@@ -13,10 +13,9 @@ pyrootutils.set_root(path = path,
                      project_root_env_var = True,
                      dotenv = True,
                      pythonpath = True)
-from src.data.datasets.aihub_motor_vibraion import Motor_Vibration
+from src.data.datasets.aihub_motor_vibraion_meta import Motor_Vibration
 from src.utils.meta_utils import FewShotBatchSampler_ProtoNet
-
-class Motor_Vibration_DataModule(LightningDataModule):
+class Motor_Vibration_Meta_DataModule(LightningDataModule):
     def __init__(self,
                  test_motor_power: List[float] = ["7.5kW","30kW"],
                 sampling_frequency_before_upsample: str = 4000,
@@ -30,17 +29,14 @@ class Motor_Vibration_DataModule(LightningDataModule):
                 train: bool = True,
                 csv_num_to_use: int = 500,
                 data_dir: str = "/home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration",
-                train_val_split: Tuple[float, float, float] = [0.7, 0.3],
-                N_WAY = 4,
-                K_SHOT = 4,
-                batch_size: int = 256,
+                N_WAY = 2,
+                K_SHOT = 2,
                 num_workers: int = 16,
                 pin_memory: bool = True,
                 persistent_workers: bool = True):
                      
         super().__init__()
         self.save_hyperparameters(logger=False) # self.hparams activated
-        
         self.data_train: Optional[Dataset] = None
         self.data_val: Optional[Dataset] = None
         self.data_test : Optional[Dataset] = None
@@ -57,36 +53,32 @@ class Motor_Vibration_DataModule(LightningDataModule):
                          upsample_method = self.hparams.upsample_method,
                          train = self.hparams.train,
                          csv_num_to_use=self.hparams.csv_num_to_use,
-                         train_val_test_split = self.hparams.train_val_split,
                          root = self.hparams.data_dir).load_data()
             
     def train_dataloader(self):
         return DataLoader(dataset=self.data_train,
-                          batch_sampler=FewShotBatchSampler_ProtoNet(self.data_train.targets, include_query=True, 
-                                                            N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=False, shuffle_once=True),
+                          batch_sampler=FewShotBatchSampler_ProtoNet(self.data_train.get_targets(), include_query=True, 
+                                                                     N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=False, shuffle_once=True),
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
-                          persistent_workers=self.hparams.persistent_workers,
-                          shuffle=True)
+                          persistent_workers=self.hparams.persistent_workers)
         
     def val_dataloader(self):
         return DataLoader(dataset=self.data_val,
-                          batch_sampler=FewShotBatchSampler_ProtoNet(self.data_val.targets, include_query=True, 
-                                                            N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=False, shuffle_once=True),
+                          batch_sampler=FewShotBatchSampler_ProtoNet(self.data_val.get_targets(), include_query=True, 
+                                                                     N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=False, shuffle_once=True),
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
-                          persistent_workers=self.hparams.persistent_workers,
-                          shuffle=False)
+                          persistent_workers=self.hparams.persistent_workers)
     
     def test_dataloader(self):
         return DataLoader(dataset=self.data_test,
-                          batch_sampler=FewShotBatchSampler_ProtoNet(self.data_test.targets, include_query=True, 
-                                                            N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=False, shuffle_once=True),
+                          batch_sampler=FewShotBatchSampler_ProtoNet(self.data_test.get_targets(), include_query=True, 
+                                                                     N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=False, shuffle_once=True),
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
-                          persistent_workers=self.hparams.persistent_workers,
-                          shuffle=False)
+                          persistent_workers=self.hparams.persistent_workers)
      
 if __name__ == '__main__':
-    _ = Motor_Vibration_DataModule()
+    _ = Motor_Vibration_Meta_DataModule()
 

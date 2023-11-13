@@ -114,7 +114,7 @@ class Motor_Vibration():
         return data.reshape(-1,1), filtered_data.reshape(-1,1), self.fault_type_dict[fault]
 
     # Process the CSV files for each motor power
-    def process_motor_power(self, data_root, motor_power, csv_num_to_use):
+    def process_motor_power(self, data_root, motor_power, csv_num_to_use, fault_type_count_list):
         data_list = []
         filterd_data_list = []
         target_list = []
@@ -125,7 +125,7 @@ class Motor_Vibration():
                 motor_path = os.path.join(motor_power_path, motor, fault)
                 csv_list = os.listdir(motor_path)
                 random.shuffle(csv_list)
-                for csv in csv_list[:csv_num_to_use]:  # Taking first 2000 files after shuffling
+                for csv in csv_list[:int(fault_type_count_list[0]/fault_type_count_list[self.fault_type_dict[fault]]*csv_num_to_use)]:  # Taking first 2000 files after shuffling
                     csv_path = os.path.join(motor_path, csv)
                     numpy_array, filtered_numpy_array, target = self.process_csv(csv_path, fault)
                     data_list.append(numpy_array)
@@ -137,9 +137,16 @@ class Motor_Vibration():
         train_data_list = []
         train_filterd_data_list = []
         train_target_list = []
+        fault_type_count_list = [0,0,0,0,0]
         train_motor_power = sorted(list(set(os.listdir(self.root)) - set(self.test_motor_power)))
+        for motor_power in train_motor_power:
+            motor_power_path = os.path.join(self.root, motor_power)
+            for motor in os.listdir(motor_power_path):
+                for fault in os.listdir(os.path.join(motor_power_path, motor)):
+                    fault_type_count_list[self.fault_type_dict[fault]] += 1
+        print(fault_type_count_list)
         for motor_power in tqdm(train_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_filterd_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use)
+            motor_data, motor_filterd_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use,fault_type_count_list)
             train_data_list.extend(motor_data)
             train_filterd_data_list.extend(motor_filterd_data)
             train_target_list.extend(motor_targets)
@@ -147,8 +154,15 @@ class Motor_Vibration():
         test_data_list = []
         test_filterd_data_list = []
         test_target_list = []
+        fault_type_count_list = [0,0,0,0,0]
+        for motor_power in self.test_motor_power:
+            motor_power_path = os.path.join(self.root, motor_power)
+            for motor in os.listdir(motor_power_path):
+                for fault in os.listdir(os.path.join(motor_power_path, motor)):
+                    fault_type_count_list[self.fault_type_dict[fault]] += 1
+        print(fault_type_count_list)
         for motor_power in tqdm(self.test_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_filterd_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use)
+            motor_data, motor_filterd_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use,fault_type_count_list)
             test_data_list.extend(motor_data)
             test_filterd_data_list.extend(motor_filterd_data)
             test_target_list.extend(motor_targets)

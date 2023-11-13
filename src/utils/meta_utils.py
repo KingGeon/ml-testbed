@@ -89,118 +89,13 @@ class FewShotBatchSampler_ProtoNet:
 
     def __len__(self):
         return self.iterations
+
     
 def split_batch(imgs, targets):
         support_imgs, query_imgs = imgs.chunk(2, dim=0)
         support_targets, query_targets = targets.chunk(2, dim=0)
         return support_imgs, query_imgs, support_targets, query_targets
-
-class ProtoMAML(L.LightningModule):
-    def __init__(self, proto_dim, lr, lr_inner, lr_output, num_inner_steps):
-        """Inputs.
-
-        proto_dim - Dimensionality of prototype feature space
-        lr - Learning rate of the outer loop Adam optimizer
-        lr_inner - Learning rate of the inner loop SGD optimizer
-        lr_output - Learning rate for the output layer in the inner loop
-        num_inner_steps - Number of inner loop updates to perform
-        """
-        super().__init__()
-        self.save_hyperparameters()
-        self.model = get_convnet(output_size=self.hparams.proto_dim)
-
-    def configure_optimizers(self):
-        optimizer = optim.AdamW(self.parameters(), lr=self.hparams.lr)
-        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[140, 180], gamma=0.1)
-        return [optimizer], [scheduler]
-
-    def run_model(self, local_model, output_weight, output_bias, imgs, labels):
-        # Execute a model with given output layer weights and inputs
-        feats = local_model(imgs)
-        preds = F.linear(feats, output_weight, output_bias)
-        loss = F.cross_entropy(preds, labels)
-        acc = (preds.argmax(dim=1) == labels).float()
-        return loss, preds, acc
-
-    def adapt_few_shot(self, support_imgs, support_targets):
-        # Determine prototype initialization
-        support_feats = self.model(support_imgs)
-        prototypes, classes = ProtoNet.calculate_prototypes(support_feats, support_targets)
-        support_labels = (classes[None, :] == support_targets[:, None]).long().argmax(dim=-1)
-        # Create inner-loop model and optimizer
-        local_model = deepcopy(self.model)
-        local_model.train()
-        local_optim = optim.SGD(local_model.parameters(), lr=self.hparams.lr_inner)
-        local_optim.zero_grad()
-        # Create output layer weights with prototype-based initialization
-        init_weight = 2 * prototypes
-        init_bias = -torch.norm(prototypes, dim=1) ** 2
-        output_weight = init_weight.detach().requires_grad_()
-        output_bias = init_bias.detach().requires_grad_()
-
-        # Optimize inner loop model on support set
-        for _ in range(self.hparams.num_inner_steps):
-            # Determine loss on the support set
-            loss, _, _ = self.run_model(local_model, output_weight, output_bias, support_imgs, support_labels)
-            # Calculate gradients and perform inner loop update
-            loss.backward()
-            local_optim.step()
-            # Update output layer via SGD
-            output_weight.data -= self.hparams.lr_output * output_weight.grad
-            output_bias.data -= self.hparams.lr_output * output_bias.grad
-            # Reset gradients
-            local_optim.zero_grad()
-            output_weight.grad.fill_(0)
-            output_bias.grad.fill_(0)
-
-        # Re-attach computation graph of prototypes
-        output_weight = (output_weight - init_weight).detach() + init_weight
-        output_bias = (output_bias - init_bias).detach() + init_bias
-
-        return local_model, output_weight, output_bias, classes
-
-    def outer_loop(self, batch, mode="train"):
-        accuracies = []
-        losses = []
-        self.model.zero_grad()
-
-        # Determine gradients for batch of tasks
-        for task_batch in batch:
-            imgs, targets = task_batch
-            support_imgs, query_imgs, support_targets, query_targets = split_batch(imgs, targets)
-            # Perform inner loop adaptation
-            local_model, output_weight, output_bias, classes = self.adapt_few_shot(support_imgs, support_targets)
-            # Determine loss of query set
-            query_labels = (classes[None, :] == query_targets[:, None]).long().argmax(dim=-1)
-            loss, preds, acc = self.run_model(local_model, output_weight, output_bias, query_imgs, query_labels)
-            # Calculate gradients for query set loss
-            if mode == "train":
-                loss.backward()
-
-                for p_global, p_local in zip(self.model.parameters(), local_model.parameters()):
-                    p_global.grad += p_local.grad  # First-order approx. -> add gradients of finetuned and base model
-
-            accuracies.append(acc.mean().detach())
-            losses.append(loss.detach())
-
-        # Perform update of base model
-        if mode == "train":
-            opt = self.optimizers()
-            opt.step()
-            opt.zero_grad()
-
-        self.log("%s_loss" % mode, sum(losses) / len(losses))
-        self.log("%s_acc" % mode, sum(accuracies) / len(accuracies))
-
-    def training_step(self, batch, batch_idx):
-        self.outer_loop(batch, mode="train")
-        return None  # Returning None means we skip the default training optimizer steps by PyTorch Lightning
-
-    def validation_step(self, batch, batch_idx):
-        # Validation requires to finetune a model, hence we need to enable gradients
-        torch.set_grad_enabled(True)
-        self.outer_loop(batch, mode="val")
-        torch.set_grad_enabled(False)
+        
 class TaskBatchSampler_ProtoMAML:
     def __init__(self, dataset_targets, batch_size, N_way, K_shot, include_query=False, shuffle=True):
         """
@@ -219,7 +114,6 @@ class TaskBatchSampler_ProtoMAML:
         super().__init__()
         self.batch_sampler = FewShotBatchSampler_ProtoNet(dataset_targets, N_way, K_shot, include_query, shuffle)
         self.task_batch_size = batch_size
-        self.local_batch_size = self.batch_sampler.batch_size
 
     def __iter__(self):
         # Aggregate multiple batches before returning the indices
@@ -236,10 +130,15 @@ class TaskBatchSampler_ProtoMAML:
     def get_collate_fn(self):
         # Returns a collate function that converts one big tensor into a list of task-specific tensors
         def collate_fn(item_list):
-            imgs = torch.stack([img for img, target in item_list], dim=0)
-            targets = torch.stack([target for img, target in item_list], dim=0)
-            imgs = imgs.chunk(self.task_batch_size, dim=0)
+            datas = torch.stack([data for data, filtered_data, target in item_list], dim=0)
+            filtered_datas = torch.stack([filtered_data for data, filtered_data, target in item_list], dim=0)
+            print(f"item_list: {item_list}")
+            for data, filtered_data, target in item_list:
+                print(target)
+            targets = torch.stack([target for data, filtered_data, target in item_list], dim=0)
+            datas = datas.chunk(self.task_batch_size, dim=0)
+            filtered_datas = filtered_datas.chunk(self.task_batch_size, dim=0)
             targets = targets.chunk(self.task_batch_size, dim=0)
-            return list(zip(imgs, targets))
+            return list(zip(datas,filtered_datas, targets))
 
         return collate_fn
