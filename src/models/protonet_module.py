@@ -44,7 +44,7 @@ class ProtoNetModule(LightningModule):
     def calculate_loss(self, batch, mode):
         # Determine training loss for a given support and query set
         x, y , targets = batch
-        features = self.model(x, y)  # Encode all images of support and query set
+        features = self.net(x, y)  # Encode all images of support and query set
         support_feats, query_feats, support_targets, query_targets = split_batch(features, targets)
         prototypes, classes = ProtoNetModule.calculate_prototypes(support_feats, support_targets)
         preds, labels, acc = self.classify_feats(prototypes, classes, query_feats, query_targets)

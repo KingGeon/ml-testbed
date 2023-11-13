@@ -3,9 +3,9 @@ import torch.fft as fft
 import torch.nn as nn
 
 class FFTReal(nn.Module):
-    def forward(self, inputs):
+    def forward(self, inputs, dim):
         inputs = inputs.type(torch.complex64)
-        fft_result = fft.fft(inputs)
+        fft_result = fft.fft(inputs, dim = dim)
         return torch.real(fft_result)
 
     
@@ -70,10 +70,12 @@ class CONV_LSTM_Classifier(nn.Module):
         dummy_output = self.maxpool(self.batchnorm4(self.conv4(self.silu(self.batchnorm3(self.conv3(self.silu(self.maxpool(self.batchnorm2(self.conv2(self.silu(self.batchnorm1(self.conv1(dummy_input)))))))))))))
         return dummy_output.shape[-1]
 
-    def _forward_with_both_filters(self, x, y):
+    def _forward_with_both_filters(self, x):
         # FFT and Real components
-        r_original = self.fft_real(x)
-        r_filtered = self.fft_real(y)
+        y = x[:,:,1].unsqueeze(-1)
+        x = x[:,:,0].unsqueeze(-1)
+        r_original = self.fft_real(x, 1)
+        r_filtered = self.fft_real(y, 1)
         dynamic_features = torch.cat((r_original,r_filtered, x, y), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
         # Apply layers
@@ -89,8 +91,10 @@ class CONV_LSTM_Classifier(nn.Module):
         z = self.dense3(self.dense2(z))
         return z
 
-    def _forward_with_raw_filter_only(self, x, y):
+    def _forward_with_raw_filter_only(self, x):
         # FFT and Real components
+        y = x[:,:,1].unsqueeze(-1)
+        x = x[:,:,0].unsqueeze(-1)
         r_original = self.fft_real(x)
         dynamic_features = torch.cat((r_original, x, y), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
@@ -107,8 +111,10 @@ class CONV_LSTM_Classifier(nn.Module):
         z = self.dense3(self.dense2(z))
         return z
     
-    def _forward_without_filters(self, x, y):
+    def _forward_without_filters(self, x):
         # FFT and Real components
+        y = x[:,:,1].unsqueeze(-1)
+        x = x[:,:,0].unsqueeze(-1)
         r_original = self.fft_real(x)
         dynamic_features = torch.cat((r_original, x), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)

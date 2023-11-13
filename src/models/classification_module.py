@@ -26,8 +26,8 @@ class ClassificationModule(LightningModule):
 
         self.val_acc_best = MaxMetric()
         
-    def forward(self, x, y):
-        return self.net(x, y)
+    def forward(self, x):
+        return self.net(x)
     
     def on_train_start(self):
         self.val_loss.reset()
@@ -35,11 +35,11 @@ class ClassificationModule(LightningModule):
         self.val_acc_best.reset()
         
     def model_step(self, batch: Any):
-        x, y, z = batch
-        logits = self.forward(x, y)
-        loss = self.criterion(logits, z)
+        x, y = batch
+        logits = self.forward(x)
+        loss = self.criterion(logits, y)
         preds = torch.argmax(logits, dim = 1)
-        return loss, preds, z
+        return loss, preds, y
     
     def training_step(self, batch: Any, batch_idx):
         loss, preds, targets = self.model_step(batch)

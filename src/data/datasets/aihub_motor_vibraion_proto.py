@@ -11,9 +11,8 @@ from scipy.signal import spectrogram, butter, sosfilt
 from scipy.stats import kurtosis
 from torch.utils.data import Dataset
 class CustomDatasetWithBandpass(Dataset):
-    def __init__(self, data, filtered_data, targets):
+    def __init__(self, data, targets):
         self.data = data
-        self.filtered_data = filtered_data
         self.targets = targets
 
     def __len__(self):
@@ -21,10 +20,9 @@ class CustomDatasetWithBandpass(Dataset):
 
     def __getitem__(self, idx):
         x = torch.Tensor(self.data[idx])
-        y = torch.Tensor(self.filtered_data[idx])
-        z = torch.LongTensor(self.targets[idx])
+        y = self.targets[idx]
         
-        return x, y, z
+        return x, y
     def get_targets(self):
         print(torch.LongTensor(self.targets))
         return torch.LongTensor(self.targets)
@@ -119,7 +117,6 @@ class Motor_Vibration():
     # Process the CSV files for each motor power
     def process_motor_power(self, data_root, motor_power, csv_num_to_use, fault_type_count_list):
         data_list = []
-        filterd_data_list = []
         target_list = []
         motor_power_path = os.path.join(data_root, motor_power)
 
@@ -131,10 +128,10 @@ class Motor_Vibration():
                 for csv in csv_list[:int(fault_type_count_list[0]/fault_type_count_list[self.fault_type_dict[fault]]*csv_num_to_use)]:  # Taking first 2000 files after shuffling
                     csv_path = os.path.join(motor_path, csv)
                     numpy_array, filtered_numpy_array, target = self.process_csv(csv_path, fault)
-                    data_list.append(numpy_array)
-                    filterd_data_list.append(filtered_numpy_array)
+                    data = np.concatenate([numpy_array,filtered_numpy_array], axis = -1)
+                    data_list.append(data)
                     target_list.append(target)
-        return data_list, filterd_data_list, target_list
+        return data_list, target_list
     
     def load_data(self):
         train_data_list = []
@@ -149,13 +146,11 @@ class Motor_Vibration():
                     fault_type_count_list[self.fault_type_dict[fault]] += 1
         print(fault_type_count_list)
         for motor_power in tqdm(train_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_filterd_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use,fault_type_count_list)
+            motor_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use,fault_type_count_list)
             train_data_list.extend(motor_data)
-            train_filterd_data_list.extend(motor_filterd_data)
             train_target_list.extend(motor_targets)
 
         test_data_list = []
-        test_filterd_data_list = []
         test_target_list = []
         fault_type_count_list = [0,0,0,0,0]
         for motor_power in self.test_motor_power:
@@ -165,13 +160,11 @@ class Motor_Vibration():
                     fault_type_count_list[self.fault_type_dict[fault]] += 1
         print(fault_type_count_list)
         for motor_power in tqdm(self.test_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_filterd_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use,fault_type_count_list)
+            motor_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use,fault_type_count_list)
             test_data_list.extend(motor_data)
-            test_filterd_data_list.extend(motor_filterd_data)
             test_target_list.extend(motor_targets)
 
         val_data_list = []
-        val_filterd_data_list = []
         val_target_list = []    
         fault_type_count_list = [0,0,0,0,0]
         for motor_power in self.val_motor_power:
@@ -181,13 +174,13 @@ class Motor_Vibration():
                     fault_type_count_list[self.fault_type_dict[fault]] += 1
         print(fault_type_count_list)
         for motor_power in tqdm(self.val_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_filterd_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use,fault_type_count_list)
+            motor_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use,fault_type_count_list)
+            
             val_data_list.extend(motor_data)
-            val_filterd_data_list.extend(motor_filterd_data)
             val_target_list.extend(motor_targets)
-        train_dataset = CustomDatasetWithBandpass(train_data_list,train_filterd_data_list,train_target_list)
-        val_dataset = CustomDatasetWithBandpass(val_data_list,val_filterd_data_list,val_target_list)
-        test_dataset = CustomDatasetWithBandpass(test_data_list,test_filterd_data_list,test_target_list)
+        train_dataset = CustomDatasetWithBandpass(train_data_list, train_target_list)
+        val_dataset = CustomDatasetWithBandpass(val_data_list, val_target_list)
+        test_dataset = CustomDatasetWithBandpass(test_data_list, test_target_list)
 
         return train_dataset, val_dataset, test_dataset
 

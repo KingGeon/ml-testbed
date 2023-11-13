@@ -31,7 +31,7 @@ class ProtoMAMLModule(L.LightningModule):
 
     def adapt_few_shot(self, support_imgs, support_targets):
         # Determine prototype initialization
-        support_feats = self.model(support_imgs)
+        support_feats = self.net(support_imgs)
         prototypes, classes = ProtoNetModule.calculate_prototypes(support_feats, support_targets)
         support_labels = (classes[None, :] == support_targets[:, None]).long().argmax(dim=-1)
         # Create inner-loop model and optimizer
