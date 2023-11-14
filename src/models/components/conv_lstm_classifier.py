@@ -1,6 +1,7 @@
 import torch
 import torch.fft as fft
 import torch.nn as nn
+import torch.nn.functional as F
 
 class FFTReal(nn.Module):
     def forward(self, inputs, dim):
@@ -99,6 +100,8 @@ class CONV_LSTM_Classifier(nn.Module):
         self.in_channels = 2 + int(use_raw_bandpass_filterd) + int(use_fft_bandpass_filterd)
         self.in_length = in_length
         self.fft_real = FFTReal()
+        self.eofft = EngineOrderFFT()
+        self.rpm_estimator = RpmEstimator()
         self.layer_norm1 = nn.LayerNorm(64)
         self.silu = nn.SiLU()
         self.maxpool = nn.MaxPool1d(kernel_size=2)
@@ -143,8 +146,9 @@ class CONV_LSTM_Classifier(nn.Module):
         # FFT and Real components
         y = x[:,:,1].unsqueeze(-1)
         x = x[:,:,0].unsqueeze(-1)
-        r_original = self.fft_real(x, 1)
-        r_filtered = self.fft_real(y, 1)
+        rpm = self.rpm_estimator(x)
+        r_original = self.eofft(x, rpm)
+        r_filtered = self.eofft(y, rpm)
         dynamic_features = torch.cat((r_original,r_filtered, x, y), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
         # Apply layers
@@ -164,7 +168,8 @@ class CONV_LSTM_Classifier(nn.Module):
         # FFT and Real components
         y = x[:,:,1].unsqueeze(-1)
         x = x[:,:,0].unsqueeze(-1)
-        r_original = self.fft_real(x, 1)
+        rpm = self.rpm_estimator(x)
+        r_original = self.eofft(x, rpm)
         dynamic_features = torch.cat((r_original, x, y), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
         # Apply layers
@@ -184,7 +189,8 @@ class CONV_LSTM_Classifier(nn.Module):
         # FFT and Real components
         y = x[:,:,1].unsqueeze(-1)
         x = x[:,:,0].unsqueeze(-1)
-        r_original = self.fft_real(x, 1)
+        rpm = self.rpm_estimator(x)
+        r_original = self.eofft(x, rpm)
         dynamic_features = torch.cat((r_original, x), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
         # Apply layers

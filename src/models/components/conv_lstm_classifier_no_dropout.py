@@ -1,6 +1,7 @@
 import torch
 import torch.fft as fft
 import torch.nn as nn
+import torch.nn.functional as F
 
 class FFTReal(nn.Module):
     def forward(self, inputs, dim):
