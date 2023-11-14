@@ -46,7 +46,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
 
     def setup(self,stage):
         if not self.data_train and not self.data_val:
-            self.data_train, self.data_val = Motor_Vibration(test_motor_power = self.hparams.test_motor_power, 
+            self.data_train, self.data_val, self.data_test = Motor_Vibration(test_motor_power = self.hparams.test_motor_power, 
                                                              val_motor_power = self.hparams.val_motor_power,
                         sampling_frequency_before_upsample = self.hparams.sampling_frequency_before_upsample, 
                         sampling_frequency_after_upsample = self.hparams.sampling_frequency_after_upsample, 
@@ -59,7 +59,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
     def train_dataloader(self):
         return DataLoader(dataset=self.data_train,
                           batch_sampler=FewShotBatchSampler_ProtoNet(self.data_train.get_targets(), include_query=True, 
-                                                                     N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=False, shuffle_once=True),
+                                                                     N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=True, shuffle_once=True),
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers)
@@ -71,6 +71,15 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers)
+    
+    def test_dataloader(self):
+        return DataLoader(dataset=self.data_test,
+                          batch_sampler=FewShotBatchSampler_ProtoNet(self.data_test.get_targets(), include_query=True, 
+                                                                     N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=False, shuffle_once=True),
+                          num_workers=self.hparams.num_workers,
+                          pin_memory=self.hparams.pin_memory,
+                          persistent_workers=self.hparams.persistent_workers)
+    
      
 if __name__ == '__main__':
     _ = Motor_Vibration_Meta_DataModule()

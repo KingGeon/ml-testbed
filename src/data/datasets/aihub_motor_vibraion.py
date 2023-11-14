@@ -11,6 +11,12 @@ from scipy.signal import spectrogram, butter, sosfilt
 from scipy.stats import kurtosis
 from torch.utils.data import Dataset
 
+def min_max_scaling(data, new_min=-1, new_max=1):
+    min_val = np.min(data)
+    max_val = np.max(data)
+    scaled_data = new_min + (data - min_val) * (new_max - new_min) / (max_val - min_val)
+    return scaled_data
+
 class CustomDatasetWithBandpass(Dataset):
     def __init__(self, data, targets):
         self.data = data
@@ -110,6 +116,7 @@ class Motor_Vibration():
 
     def process_csv(self, csv_path, fault):
         data = np.genfromtxt(csv_path, delimiter=',', skip_header=9, usecols=(1,), max_rows=4000)
+        data = min_max_scaling(data)
         data = Motor_Vibration.up_sample(data, self.sampling_frequency_before_upsample, self.sampling_frequency_after_upsample, self.upsample_method)
         filtered_data = self.custom_filtering(data,sf = self.sampling_frequency_after_upsample)
         return data.reshape(-1,1), filtered_data.reshape(-1,1), self.fault_type_dict[fault]
