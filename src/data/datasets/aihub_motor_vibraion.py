@@ -3,6 +3,7 @@ import random
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+import math
 from typing import List,Tuple
 import librosa
 import torch
@@ -11,6 +12,51 @@ from scipy.signal import spectrogram, butter, sosfilt
 from scipy.stats import kurtosis
 from torch.utils.data import Dataset
 
+def original_fft(signal,sf):
+    _signal = signal
+    y = np.abs(np.fft.fft(_signal,axis = 0)/len(signal))        # fft computing and normaliation
+    y = y[range(math.trunc(len(signal)/2))]  
+    k = np.arange(len(signal))
+    f0=k*sf/len(signal)    # double sides frequency range
+    f0=f0[range(math.trunc(len(signal)/2))]  
+    return f0, y
+
+def is_peak_at_frequency(freq, spectrum,threshold):
+    # 실제 구현에선 주파수 스펙트럼에서 해당 주파수의 진폭이 피크를 형성하는지 검사
+    return spectrum[int(freq)] > threshold
+                
+def estimate_rpm(numpy_array, sf=8192, f_min=27.6, f_max=29.1, f_r=1, M=60, c=2):
+
+    f, magnitude_spectrum = original_fft(numpy_array, sf)
+    # 속도 후보들과 그에 대한 초기 확률 설정
+    candidates = np.arange(f_min, f_max, f_r/M)
+    probabilities = np.ones_like(candidates)  # 모든 후보에 동일한 초기 확률 할당
+    #print(f"3분위수 :{np.percentile(magnitude_spectrum, 75)}")
+    #print(f"중위수 : {np.percentile(magnitude_spectrum, 50)}")
+    #print(f"평균 : {np.mean(magnitude_spectrum)}")
+    #print(f"최대 : {np.max(magnitude_spectrum)}")
+    threshold = np.mean(magnitude_spectrum)*1.5
+    # 후보들의 조화 검사 및 확률 업데이트
+    for i, fc in enumerate(candidates):
+        for k in range(1, M+1):
+            harmonic_freq = k * fc
+                    
+            if not is_peak_at_frequency(harmonic_freq, magnitude_spectrum,threshold):
+                probabilities[i] /= c  # 피크가 없으면 확률 감소
+                # 최종 추정 속도 결정
+    estimated_speed = candidates[np.argmax(probabilities)]
+
+
+    #print(f'Estimated speed: {estimated_speed} Estimated rpm: {estimated_speed*60}')
+    return estimated_speed*60
+
+def engine_order_fft(signal, rpm, sf = 8192, res = 40, ts = 1):
+    # signal shape: (batch,signal_length, channel_size)
+    # 
+    _signal = signal[:int(sf*ts)]
+    pad_length = int(sf*(res * 60/rpm - ts))
+    zero_padded_signal = np.concatenate((_signal, np.zeros(pad_length)))
+    return np.abs(np.fft.fft(zero_padded_signal))[:sf]
 def min_max_scaling(data, new_min=-1, new_max=1):
     min_val = np.min(data)
     max_val = np.max(data)
@@ -118,8 +164,10 @@ class Motor_Vibration():
         data = np.genfromtxt(csv_path, delimiter=',', skip_header=9, usecols=(1,), max_rows=4000)
         data = min_max_scaling(data)
         data = Motor_Vibration.up_sample(data, self.sampling_frequency_before_upsample, self.sampling_frequency_after_upsample, self.upsample_method)
+        rpm = estimate_rpm(data)
+        eofft = engine_order_fft(data,rpm)
         filtered_data = self.custom_filtering(data,sf = self.sampling_frequency_after_upsample)
-        return data.reshape(-1,1), filtered_data.reshape(-1,1), self.fault_type_dict[fault]
+        return data.reshape(-1,1), filtered_data.reshape(-1,1), eofft.reshape(-1,1), self.fault_type_dict[fault]
 
     # Process the CSV files for each motor power
     def process_motor_power(self, data_root, motor_power, csv_num_to_use, fault_type_count_list):
@@ -134,8 +182,8 @@ class Motor_Vibration():
                 random.shuffle(csv_list)
                 for csv in csv_list[:int(fault_type_count_list[0]/fault_type_count_list[self.fault_type_dict[fault]]*csv_num_to_use)]:  # Taking first 2000 files after shuffling
                     csv_path = os.path.join(motor_path, csv)
-                    numpy_array, filtered_numpy_array, target = self.process_csv(csv_path, fault)
-                    data = np.concatenate([numpy_array,filtered_numpy_array], axis = -1)
+                    numpy_array, filtered_numpy_array, eofft, target = self.process_csv(csv_path, fault)
+                    data = np.concatenate([numpy_array,filtered_numpy_array,eofft], axis = -1)
                     data_list.append(data)
                     target_list.append(target)
         return data_list, target_list

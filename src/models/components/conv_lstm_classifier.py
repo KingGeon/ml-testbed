@@ -15,7 +15,7 @@ class EngineOrderFFT(nn.Module):
 
     def engine_order_fft(self, signal, rpm, sf = 8192, res = 40, ts= 1):
         # signal shape: (batch, signal_length, channel_size)
-        batch_size, signal_length, _ = signal.shape
+        batch_size, signal_length, channel_size = signal.shape
 
         # Truncate the signal
         truncated_signal = signal[:, :int(sf*ts), :]
@@ -25,16 +25,15 @@ class EngineOrderFFT(nn.Module):
         max_pad_length = torch.max(pad_lengths).long()  # Find the maximum padding length
 
         # Apply padding to the whole batch
-        padded_signal = F.pad(truncated_signal, (0, max_pad_length))
+        padded_signal = F.pad(truncated_signal, (0, 0, 0, max_pad_length))
 
         # Remove extra padding for each item in the batch
-        padded_signals = [padded_signal[i, :, :signal_length + int(pad_lengths[i])] for i in range(batch_size)]
+        padded_fft_result = [torch.abs(torch.fft.fft(padded_signal[i, :signal_length + int(pad_lengths[i]), :].unsqueeze(0), dim = 1))[:,:sf,:] for i in range(batch_size)]
 
         # Stack the padded signals and perform FFT
-        stacked_signals = torch.stack(padded_signals, dim=0)
-        fft_result = torch.fft.fft(stacked_signals, dim=1)
+        stacked_eofft = torch.stack(padded_fft_result, dim=0).view(batch_size,signal_length,channel_size)
 
-        return torch.abs(fft_result)[:, :sf, :]
+        return torch.abs(stacked_eofft)
 
     def forward(self, inputs, rpm):
         # inputs shape: (batch, signal_length, channel_size)
@@ -102,8 +101,6 @@ class CONV_LSTM_Classifier(nn.Module):
         self.in_channels = 2 + int(use_raw_bandpass_filterd) + int(use_fft_bandpass_filterd)
         self.in_length = in_length
         self.fft_real = FFTReal()
-        self.eofft = EngineOrderFFT()
-        self.rpm_estimator = RpmEstimator()
         self.layer_norm1 = nn.LayerNorm(64)
         self.silu = nn.SiLU()
         self.maxpool = nn.MaxPool1d(kernel_size=2)
@@ -146,12 +143,11 @@ class CONV_LSTM_Classifier(nn.Module):
 
     def _forward_with_both_filters(self, x):
         # FFT and Real components
+        eofft = x[:,:,2].unsqueeze(-1)
         y = x[:,:,1].unsqueeze(-1)
         x = x[:,:,0].unsqueeze(-1)
-        rpm = self.rpm_estimator(x)
-        r_original = self.eofft(x, rpm)
-        r_filtered = self.eofft(y, rpm)
-        dynamic_features = torch.cat((r_original,r_filtered, x, y), dim=2)
+        r_filtered = self.fft_real(y, 1)
+        dynamic_features = torch.cat((eofft,r_filtered, x, y), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
         # Apply layers
         z = self.silu(self.batchnorm1(self.dropout(self.conv1(dynamic_features))))
@@ -168,11 +164,10 @@ class CONV_LSTM_Classifier(nn.Module):
 
     def _forward_with_raw_filter_only(self, x):
         # FFT and Real components
+        eofft = x[:,:,2].unsqueeze(-1)
         y = x[:,:,1].unsqueeze(-1)
         x = x[:,:,0].unsqueeze(-1)
-        rpm = self.rpm_estimator(x)
-        r_original = self.eofft(x, rpm)
-        dynamic_features = torch.cat((r_original, x, y), dim=2)
+        dynamic_features = torch.cat((eofft, x, y), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
         # Apply layers
         z = self.silu(self.batchnorm1(self.dropout(self.conv1(dynamic_features))))
@@ -189,11 +184,9 @@ class CONV_LSTM_Classifier(nn.Module):
     
     def _forward_without_filters(self, x):
         # FFT and Real components
-        y = x[:,:,1].unsqueeze(-1)
+        eofft = x[:,:,2].unsqueeze(-1)
         x = x[:,:,0].unsqueeze(-1)
-        rpm = self.rpm_estimator(x)
-        r_original = self.eofft(x, rpm)
-        dynamic_features = torch.cat((r_original, x), dim=2)
+        dynamic_features = torch.cat((eofft, x), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
         # Apply layers
         z = self.silu(self.batchnorm1(self.dropout(self.conv1(dynamic_features))))
