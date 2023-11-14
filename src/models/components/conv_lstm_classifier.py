@@ -41,8 +41,10 @@ class EngineOrderFFT(nn.Module):
         # rpm shape: (batch,)
         return self.engine_order_fft(inputs, rpm)
 
-
 class RpmEstimator(nn.Module):
+    def __init__(self):
+        super(RpmEstimator, self).__init__()
+
     def original_fft(self,signal, sf):
         # signal: (batch, signal_length, channel_size)
         y = torch.fft.fft(signal, dim=1) / signal.size(1)
@@ -74,8 +76,9 @@ class RpmEstimator(nn.Module):
                 probabilities[mask, i] /= c
         estimated_speeds = candidates[torch.arange(batch_signal.size(0)), torch.argmax(probabilities, dim=1)]
         return estimated_speeds * 60
+    
     def forward(self, signal):
-        return self.estimate_rpm(signal)  
+        return self.estimate_rpm(signal) 
     
 class CONV_LSTM_Classifier(nn.Module):
     def __init__(
