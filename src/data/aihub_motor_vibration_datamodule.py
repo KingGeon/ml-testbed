@@ -18,7 +18,7 @@ from src.data.datasets.aihub_motor_vibraion import Motor_Vibration
 
 class Motor_Vibration_DataModule(LightningDataModule):
     def __init__(self,
-                 test_motor_power: List[float] = ["7.5kW","30kW"],
+                test_motor_power: List[float] = ["2.2kW"],
                 sampling_frequency_before_upsample: str = 4000,
                 sampling_frequency_after_upsample: str = 8192,
                 fault_type_dict = {"정상": 0,
