@@ -13,29 +13,28 @@ class EngineOrderFFT(nn.Module):
     def __init__(self):
         super(EngineOrderFFT, self).__init__()
 
-    def engine_order_fft(self, signal, rpm, sf=8192, res=1, ts=0.1):
+    def engine_order_fft(self, signal, rpm, sf=8192, res=20, ts=0.1):
         # signal shape: (batch, signal_length, channel_size)
-        batch_size, signal_length, channel_size = signal.shape
+        batch_size, signal_length, _ = signal.shape
 
         # Truncate the signal
         truncated_signal = signal[:, :int(sf*ts), :]
 
         # Calculate the padding length for each item in the batch
         pad_lengths = (res * 60 / rpm - ts) * sf
-        pad_lengths = pad_lengths.long()  # Convert to long tensor for use in padding
+        max_pad_length = torch.max(pad_lengths).long()  # Find the maximum padding length
 
-        # Apply padding
-        padded_signals = []
-        for i in range(batch_size):
-            pad_length = int(pad_lengths[i])
-            zero_padded_signal = F.pad(truncated_signal[i], (0, pad_length))
-            padded_signals.append(zero_padded_signal)
+        # Apply padding to the whole batch
+        padded_signal = F.pad(truncated_signal, (0, max_pad_length))
+
+        # Remove extra padding for each item in the batch
+        padded_signals = [padded_signal[i, :, :signal_length + int(pad_lengths[i])] for i in range(batch_size)]
 
         # Stack the padded signals and perform FFT
         stacked_signals = torch.stack(padded_signals, dim=0)
         fft_result = torch.fft.fft(stacked_signals, dim=1)
 
-        return torch.abs(fft_result)[:,:sf,:]
+        return torch.abs(fft_result)[:, :sf, :]
 
     def forward(self, inputs, rpm):
         # inputs shape: (batch, signal_length, channel_size)
