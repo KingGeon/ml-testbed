@@ -17,7 +17,8 @@ from src.data.datasets.aihub_motor_vibraion_meta import Motor_Vibration
 from src.utils.meta_utils import TaskBatchSampler_ProtoMAML, split_batch
 class Motor_Vibration_Meta_DataModule(LightningDataModule):
     def __init__(self,
-                 test_motor_power: List[str] = ["7.5kW","30kW"],
+                test_motor_power: List[str] = ["7.5kW","22kW","30kW"],
+                val_motor_power: List[str] = ["2.2kW"],
                 sampling_frequency_before_upsample: str = 4000,
                 sampling_frequency_after_upsample: str = 8192,
                 fault_type_dict = {"정상": 0,
@@ -29,8 +30,8 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
                 train: bool = True,
                 csv_num_to_use: int = 500,
                 data_dir: str = "/home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration",
-                N_WAY = 2,
-                K_SHOT = 2,
+                N_WAY = 4,
+                K_SHOT = 4,
                 num_workers: int = 16,
                 pin_memory: bool = True,
                 persistent_workers: bool = True):
@@ -47,6 +48,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
     def setup(self,stage):
         if not self.data_train and not self.data_val and not self.data_test:
             self.data_train, self.data_val, self.data_test = Motor_Vibration(test_motor_power = self.hparams.test_motor_power,
+                                                                             val_motor_power = self.hparams.val_motor_power,
                          sampling_frequency_before_upsample = self.hparams.sampling_frequency_before_upsample, 
                          sampling_frequency_after_upsample = self.hparams.sampling_frequency_after_upsample, 
                          fault_type_dict = self.hparams.fault_type_dict,
@@ -60,7 +62,6 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
                                                              N_way=self.N_WAY, K_shot=self.K_SHOT, batch_size=4)
         return DataLoader(dataset=self.data_train,
                           batch_sampler=train_protomaml_sampler,
-                          collate_fn=train_protomaml_sampler.get_collate_fn(),
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers)
@@ -70,7 +71,6 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
                                                              N_way=self.N_WAY, K_shot=self.K_SHOT, batch_size=4)
         return DataLoader(dataset=self.data_val,
                           batch_sampler=val_protomaml_sampler,
-                          collate_fn=val_protomaml_sampler.get_collate_fn(),
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers)
@@ -80,7 +80,6 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
                                                              N_way=self.N_WAY, K_shot=self.K_SHOT, batch_size=4)
         return DataLoader(dataset=self.data_test,
                           batch_sampler=test_protomaml_sampler,
-                          collate_fn=test_protomaml_sampler.get_collate_fn(),
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers)

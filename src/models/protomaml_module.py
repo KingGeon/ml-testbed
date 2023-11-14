@@ -9,7 +9,7 @@ import lightning as L
 import torch
 import torch.optim as optim
 from copy import deepcopy
-from src.utils.meta_utils import ProtoNetModule
+from src.models.protonet_module import ProtoNetModule
 
 class ProtoMAMLModule(L.LightningModule):
     def __init__(self,
@@ -35,7 +35,7 @@ class ProtoMAMLModule(L.LightningModule):
         prototypes, classes = ProtoNetModule.calculate_prototypes(support_feats, support_targets)
         support_labels = (classes[None, :] == support_targets[:, None]).long().argmax(dim=-1)
         # Create inner-loop model and optimizer
-        local_model = deepcopy(self.model)
+        local_model = deepcopy(self.net)
         local_model.train()
         local_optim = optim.SGD(local_model.parameters(), lr=self.hparams.lr_inner)
         local_optim.zero_grad()
@@ -69,11 +69,11 @@ class ProtoMAMLModule(L.LightningModule):
     def outer_loop(self, batch, mode="train"):
         accuracies = []
         losses = []
-        self.model.zero_grad()
-
+        self.net.zero_grad()
+        print(f"batch: {batch}")
         # Determine gradients for batch of tasks
         for task_batch in batch:
-            imgs, targets = task_batch
+            imgs, targets = task_batch[0]
             support_imgs, query_imgs, support_targets, query_targets = split_batch(imgs, targets)
             # Perform inner loop adaptation
             local_model, output_weight, output_bias, classes = self.adapt_few_shot(support_imgs, support_targets)
@@ -84,7 +84,7 @@ class ProtoMAMLModule(L.LightningModule):
             if mode == "train":
                 loss.backward()
 
-                for p_global, p_local in zip(self.model.parameters(), local_model.parameters()):
+                for p_global, p_local in zip(self.net.parameters(), local_model.parameters()):
                     p_global.grad += p_local.grad  # First-order approx. -> add gradients of finetuned and base model
 
             accuracies.append(acc.mean().detach())
@@ -96,8 +96,8 @@ class ProtoMAMLModule(L.LightningModule):
             opt.step()
             opt.zero_grad()
 
-        self.log("%s_loss" % mode, sum(losses) / len(losses))
-        self.log("%s_acc" % mode, sum(accuracies) / len(accuracies))
+        self.log("%s/loss" % mode, sum(losses) / len(losses))
+        self.log("%s/acc" % mode, sum(accuracies) / len(accuracies))
 
     def training_step(self, batch, batch_idx):
         self.outer_loop(batch, mode="train")
@@ -111,7 +111,7 @@ class ProtoMAMLModule(L.LightningModule):
 
     def on_validation_epoch_end(self):
          # Retrieve the current validation accuracy from the logged metrics
-        current_val_acc = self.trainer.callback_metrics.get("val_acc")
+        current_val_acc = self.trainer.callback_metrics.get("val/acc")
 
         # Update the best validation accuracy metric
         self.val_acc_best.update(current_val_acc)

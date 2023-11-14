@@ -10,6 +10,13 @@ from torch.utils.data import Dataset, random_split
 from scipy.signal import spectrogram, butter, sosfilt
 from scipy.stats import kurtosis
 from torch.utils.data import Dataset
+
+def min_max_scaling(data, new_min=-1, new_max=1):
+    min_val = np.min(data)
+    max_val = np.max(data)
+    scaled_data = new_min + (data - min_val) * (new_max - new_min) / (max_val - min_val)
+    return scaled_data
+
 class CustomDatasetWithBandpass(Dataset):
     def __init__(self, data, targets):
         self.data = data
@@ -110,6 +117,7 @@ class Motor_Vibration():
 
     def process_csv(self, csv_path, fault):
         data = np.genfromtxt(csv_path, delimiter=',', skip_header=9, usecols=(1,), max_rows=4000)
+        data = min_max_scaling(data)
         data = Motor_Vibration.up_sample(data, self.sampling_frequency_before_upsample, self.sampling_frequency_after_upsample, self.upsample_method)
         filtered_data = self.custom_filtering(data,sf = self.sampling_frequency_after_upsample)
         return data.reshape(-1,1), filtered_data.reshape(-1,1), self.fault_type_dict[fault]
@@ -146,7 +154,7 @@ class Motor_Vibration():
                     fault_type_count_list[self.fault_type_dict[fault]] += 1
         print(fault_type_count_list)
         for motor_power in tqdm(train_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use,fault_type_count_list)
+            motor_data, motor_targets = self.process_motor_power(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
             train_data_list.extend(motor_data)
             train_target_list.extend(motor_targets)
 
@@ -160,7 +168,7 @@ class Motor_Vibration():
                     fault_type_count_list[self.fault_type_dict[fault]] += 1
         print(fault_type_count_list)
         for motor_power in tqdm(self.test_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use,fault_type_count_list)
+            motor_data, motor_targets = self.process_motor_power(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
             test_data_list.extend(motor_data)
             test_target_list.extend(motor_targets)
 
@@ -174,7 +182,7 @@ class Motor_Vibration():
                     fault_type_count_list[self.fault_type_dict[fault]] += 1
         print(fault_type_count_list)
         for motor_power in tqdm(self.val_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use,fault_type_count_list)
+            motor_data, motor_targets = self.process_motor_power(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
             
             val_data_list.extend(motor_data)
             val_target_list.extend(motor_targets)

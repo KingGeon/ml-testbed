@@ -130,15 +130,10 @@ class TaskBatchSampler_ProtoMAML:
     def get_collate_fn(self):
         # Returns a collate function that converts one big tensor into a list of task-specific tensors
         def collate_fn(item_list):
-            datas = torch.stack([data for data, filtered_data, target in item_list], dim=0)
-            filtered_datas = torch.stack([filtered_data for data, filtered_data, target in item_list], dim=0)
-            print(f"item_list: {item_list}")
-            for data, filtered_data, target in item_list:
-                print(target)
-            targets = torch.stack([target for data, filtered_data, target in item_list], dim=0)
-            datas = datas.chunk(self.task_batch_size, dim=0)
-            filtered_datas = filtered_datas.chunk(self.task_batch_size, dim=0)
+            imgs = torch.stack([img for img, target in item_list], dim=0)
+            targets = torch.stack([target for img, target in item_list], dim=0)
+            imgs = imgs.chunk(self.task_batch_size, dim=0)
             targets = targets.chunk(self.task_batch_size, dim=0)
-            return list(zip(datas,filtered_datas, targets))
+            return list(zip(imgs, targets))
 
         return collate_fn
