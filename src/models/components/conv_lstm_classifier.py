@@ -7,7 +7,75 @@ class FFTReal(nn.Module):
         inputs = inputs.type(torch.complex64)
         fft_result = fft.fft(inputs, dim = dim)
         return torch.real(fft_result)
+    
+class EngineOrderFFT(nn.Module):
+    def __init__(self):
+        super(EngineOrderFFT, self).__init__()
 
+    def engine_order_fft(self, signal, rpm, sf=8192, res=1, ts=0.1):
+        # signal shape: (batch, signal_length, channel_size)
+        batch_size, signal_length, channel_size = signal.shape
+
+        # Truncate the signal
+        truncated_signal = signal[:, :int(sf*ts), :]
+
+        # Calculate the padding length for each item in the batch
+        pad_lengths = (res * 60 / rpm - ts) * sf
+        pad_lengths = pad_lengths.long()  # Convert to long tensor for use in padding
+
+        # Apply padding
+        padded_signals = []
+        for i in range(batch_size):
+            pad_length = int(pad_lengths[i])
+            zero_padded_signal = F.pad(truncated_signal[i], (0, pad_length))
+            padded_signals.append(zero_padded_signal)
+
+        # Stack the padded signals and perform FFT
+        stacked_signals = torch.stack(padded_signals, dim=0)
+        fft_result = torch.fft.fft(stacked_signals, dim=1)
+
+        return torch.abs(fft_result)[:,:sf,:]
+
+    def forward(self, inputs, rpm):
+        # inputs shape: (batch, signal_length, channel_size)
+        # rpm shape: (batch,)
+        return self.engine_order_fft(inputs, rpm)
+
+
+class RpmEstimator(nn.Module):
+    def original_fft(self,signal, sf):
+        # signal: (batch, signal_length, channel_size)
+        y = torch.fft.fft(signal, dim=1) / signal.size(1)
+        y = torch.abs(y[:, :signal.size(1)//2, :])
+        k = torch.arange(signal.size(1)).unsqueeze(0).expand(signal.size(0), -1).unsqueeze(2)
+        f0 = k * sf / signal.size(1)
+        f0 = f0[:, :signal.size(1)//2, :]
+        return f0, y
+
+    def is_peak_at_frequency(self,freq, spectrum, threshold):
+        # freq: (batch_size, )
+        # spectrum: (batch, signal_length//2, channel_size)
+        # threshold: (batch, channel_size)
+        mask = torch.zeros(spectrum.size(0), dtype=torch.bool)
+        for i, f in enumerate(freq.long()):
+            mask[i] = spectrum[i, f, :].any() > threshold[i, :]
+        return mask
+
+    def estimate_rpm(self,batch_signal, sf=8192, f_min=27.6, f_max=29.1, f_r=1, M=60, c=2):
+        # batch_signal: (batch, signal_length, channel_size)
+        f, magnitude_spectrum = self.original_fft(batch_signal, sf)
+        candidates = torch.arange(f_min, f_max, f_r/M).unsqueeze(0).expand(batch_signal.size(0), -1)
+        probabilities = torch.ones_like(candidates)
+        threshold = torch.mean(magnitude_spectrum, dim=1) * 1.5
+        for i, fc in enumerate(candidates.T):
+            for k in range(1, M+1):
+                harmonic_freq = k * fc
+                mask = ~self.is_peak_at_frequency(harmonic_freq, magnitude_spectrum, threshold)
+                probabilities[mask, i] /= c
+        estimated_speeds = candidates[torch.arange(batch_signal.size(0)), torch.argmax(probabilities, dim=1)]
+        return estimated_speeds * 60
+    def forward(self, signal):
+        return self.estimate_rpm(signal)  
     
 class CONV_LSTM_Classifier(nn.Module):
     def __init__(
