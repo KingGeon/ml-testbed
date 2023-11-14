@@ -13,7 +13,7 @@ class EngineOrderFFT(nn.Module):
     def __init__(self):
         super(EngineOrderFFT, self).__init__()
 
-    def engine_order_fft(self, signal, rpm, sf=8192, res=20, ts=0.1):
+    def engine_order_fft(self, signal, rpm, sf = 8192, res = 40, ts= 1):
         # signal shape: (batch, signal_length, channel_size)
         batch_size, signal_length, _ = signal.shape
 
@@ -59,8 +59,8 @@ class RpmEstimator(nn.Module):
         # spectrum: (batch, signal_length//2, channel_size)
         # threshold: (batch, channel_size)
         mask = torch.zeros(spectrum.size(0), dtype=torch.bool)
-        for i, f in enumerate(freq.long()):
-            mask[i] = spectrum[i, f, :].any() > threshold[i, :]
+        for i, f in enumerate(freq):
+            mask[i] = spectrum[i, int(f), :] > threshold[i, :]
         return mask
 
     def estimate_rpm(self,batch_signal, sf=8192, f_min=27.6, f_max=29.1, f_r=1, M=60, c=2):

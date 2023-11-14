@@ -60,7 +60,7 @@ class RpmEstimator(nn.Module):
         # threshold: (batch, channel_size)
         mask = torch.zeros(spectrum.size(0), dtype=torch.bool)
         for i, f in enumerate(freq.long()):
-            mask[i] = spectrum[i, f, :].any() > threshold[i, :]
+            mask[i] = spectrum[i, f, :] > threshold[i, :]
         return mask
 
     def estimate_rpm(self,batch_signal, sf=8192, f_min=27.6, f_max=29.1, f_r=1, M=60, c=2):
