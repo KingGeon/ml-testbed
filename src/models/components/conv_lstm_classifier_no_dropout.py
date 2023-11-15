@@ -97,7 +97,6 @@ class CONV_LSTM_Classifier(nn.Module):
         use_fft_bandpass_filterd = True,
     ):
         super(CONV_LSTM_Classifier, self).__init__()
-
         self.in_channels = 2 + int(use_raw_bandpass_filterd) + int(use_fft_bandpass_filterd)
         self.in_length = in_length
         self.fft_real = FFTReal()
@@ -131,7 +130,10 @@ class CONV_LSTM_Classifier(nn.Module):
             else:
                 self.forward = self._forward_with_raw_filter_only
         else:
-            self.forward = self._forward_without_filters
+            if use_fft_bandpass_filterd:
+                self.forward = self._forward_with_raw_fft_filters
+            else:
+                self.forward = self._forward_without_filters
 
     def calculate_conv_output_size(self):
         # Dummy input for calculating the size of LSTM input
@@ -167,6 +169,26 @@ class CONV_LSTM_Classifier(nn.Module):
         y = x[:,:,1].unsqueeze(-1)
         x = x[:,:,0].unsqueeze(-1)
         dynamic_features = torch.cat((eofft, x, y), dim=2)
+        dynamic_features = dynamic_features.transpose(1,2)
+        # Apply layers
+        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
+        z = self.silu(self.batchnorm2(self.conv2(z)))
+        z = self.maxpool(z)
+        z = self.silu(self.batchnorm3(self.conv3(z)))
+        z = self.silu(self.batchnorm4(self.conv4(z)))
+        z = self.maxpool(z)
+        z, _ = self.lstm(z)
+        z = z[:, -1, :]  # Take the last time step
+        z = self.layer_norm1(self.dense1(z))
+        z = self.dense3(self.dense2(z))
+        return z
+    
+    def _forward_with_raw_fft_filters(self, x):
+        eofft = x[:,:,2].unsqueeze(-1)
+        y = x[:,:,1].unsqueeze(-1)
+        x = x[:,:,0].unsqueeze(-1)
+        r_filtered = self.fft_real(y, 1)
+        dynamic_features = torch.cat((eofft,r_filtered, x), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
         # Apply layers
         z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
