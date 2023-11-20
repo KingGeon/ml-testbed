@@ -28,7 +28,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
                     "회전체불평형": 4},
                 upsample_method = "soxr_vhq", #["soxr_vhq", "soxr_hq","kaiser_fast","kaiser_best","sinc_best","sinc_fastest"]
                 train: bool = True,
-                csv_num_to_use: int = 500,
+                csv_num_to_use: int = 480,
                 data_dir: str = "/home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration",
                 N_WAY = 4,
                 K_SHOT = 4,
@@ -62,6 +62,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
                                                              N_way=self.N_WAY, K_shot=self.K_SHOT, batch_size=4)
         return DataLoader(dataset=self.data_train,
                           batch_sampler=train_protomaml_sampler,
+                          collate_fn = train_protomaml_sampler.get_collate_fn(),
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers)
@@ -71,6 +72,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
                                                              N_way=self.N_WAY, K_shot=self.K_SHOT, batch_size=4)
         return DataLoader(dataset=self.data_val,
                           batch_sampler=val_protomaml_sampler,
+                          collate_fn = val_protomaml_sampler.get_collate_fn(),
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers)

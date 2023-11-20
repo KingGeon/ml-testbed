@@ -15,6 +15,8 @@ pyrootutils.set_root(path = path,
                      pythonpath = True)
 from src.data.datasets.aihub_motor_vibraion_proto import Motor_Vibration
 from src.utils.meta_utils import FewShotBatchSampler_ProtoNet
+import learn2learn as l2l
+from learn2learn.data.transforms import NWays, KShots, LoadData, RemapLabels
 class Motor_Vibration_Meta_DataModule(LightningDataModule):
     def __init__(self,
                 test_motor_power: List[str] = ["7.5kW","22kW","30kW"],
@@ -28,7 +30,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
                     "회전체불평형": 4},
                 upsample_method = "soxr_vhq", #["soxr_vhq", "soxr_hq","kaiser_fast","kaiser_best","sinc_best","sinc_fastest"]
                 train: bool = True,
-                csv_num_to_use: int = 500,
+                csv_num_to_use: int = 480,
                 data_dir: str = "/home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration",
                 N_WAY = 4,
                 K_SHOT = 4,
@@ -40,12 +42,13 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
         self.save_hyperparameters(logger=False) # self.hparams activated
         self.data_train: Optional[Dataset] = None
         self.data_val: Optional[Dataset] = None
+        self.data_test: Optional[Dataset] = None
         self.N_WAY = N_WAY
         self.K_SHOT = K_SHOT
         
 
     def setup(self,stage):
-        if not self.data_train and not self.data_val:
+        if not self.data_train and not self.data_val and not self.data_test:
             self.data_train, self.data_val, self.data_test = Motor_Vibration(test_motor_power = self.hparams.test_motor_power, 
                                                              val_motor_power = self.hparams.val_motor_power,
                         sampling_frequency_before_upsample = self.hparams.sampling_frequency_before_upsample, 
@@ -57,25 +60,55 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
                         root = self.hparams.data_dir).load_data()
             
     def train_dataloader(self):
-        return DataLoader(dataset=self.data_train,
-                          batch_sampler=FewShotBatchSampler_ProtoNet(self.data_train.get_targets(), include_query=True, 
-                                                                     N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=True, shuffle_once=True),
+        self.data_train = l2l.data.MetaDataset(self.data_train)
+        train_transforms = [
+            NWays(self.data_train, self.N_WAY),
+            KShots(self.data_train, self.K_SHOT * 2),
+            LoadData(self.data_train),
+            RemapLabels(self.data_train),
+        ]
+        train_tasks = l2l.data.Taskset(
+            self.data_train,
+            task_transforms=train_transforms,
+            num_tasks= 2500,
+        )
+        return DataLoader(dataset=train_tasks,
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
-                          persistent_workers=self.hparams.persistent_workers)
+                          persistent_workers=self.hparams.persistent_workers,shuffle = True)
         
     def val_dataloader(self):
-        return DataLoader(dataset=self.data_val,
-                          batch_sampler=FewShotBatchSampler_ProtoNet(self.data_val.get_targets(), include_query=True, 
-                                                                     N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=False, shuffle_once=True),
+        self.data_val = l2l.data.MetaDataset(self.data_val)
+        valid_transforms = [
+            NWays(self.data_val, self.N_WAY),
+            KShots(self.data_val, self.K_SHOT * 2),
+            LoadData(self.data_val),
+            RemapLabels(self.data_val),
+        ]
+        valid_tasks = l2l.data.Taskset(
+            self.data_val,
+            task_transforms=valid_transforms,
+            num_tasks=500,
+        )
+        return DataLoader(dataset = valid_tasks,
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers)
     
     def test_dataloader(self):
-        return DataLoader(dataset=self.data_test,
-                          batch_sampler=FewShotBatchSampler_ProtoNet(self.data_test.get_targets(), include_query=True, 
-                                                                     N_way=self.N_WAY, K_shot=self.K_SHOT, shuffle=False, shuffle_once=True),
+        self.data_test = l2l.data.MetaDataset(self.data_test)
+        test_transforms = [
+            NWays(self.data_test, self.N_WAY),
+            KShots(self.data_test, self.K_SHOT * 2),
+            LoadData(self.data_test),
+            RemapLabels(self.data_test),
+        ]
+        test_tasks = l2l.data.Taskset(
+            self.data_test,
+            task_transforms=test_transforms,
+            num_tasks=1000,
+        )
+        return DataLoader(dataset=test_tasks,
                           num_workers=self.hparams.num_workers,
                           pin_memory=self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers)

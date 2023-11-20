@@ -8,58 +8,81 @@ from src.utils.meta_utils import split_batch
 import lightning as L
 import torch
 import torch.optim as optim
+import numpy as np
 
 class ProtoNetModule(LightningModule):
     def __init__(self,
                  net: torch.nn.Module,
                  optimizer: torch.optim.Optimizer,
-                 scheduler: torch.optim.lr_scheduler):
+                 scheduler: torch.optim.lr_scheduler,
+                 N_WAY: int = 4,
+                 K_SHOT: int = 4):
         super().__init__()
         self.save_hyperparameters(logger=False) # self.hparams activation
         self.net = net
         self.criterion = torch.nn.CrossEntropyLoss()
+        self.N_WAY = N_WAY
+        self.K_SHOT = K_SHOT
         
         self.val_acc_best = MaxMetric()
         self.test_acc_best = MaxMetric()
-    @staticmethod
-    def calculate_prototypes(features, targets):
-        # Given a stack of features vectors and labels, return class prototypes
-        # features - shape [N, proto_dim], targets - shape [N]
-        classes, _ = torch.unique(targets).sort()  # Determine which classes we have
-        prototypes = []
-        for c in classes:
-            p = features[torch.where(targets == c)[0]].mean(dim=0)  # Average class feature vectors
-            prototypes.append(p)
-        prototypes = torch.stack(prototypes, dim=0)
-        # Return the 'classes' tensor to know which prototype belongs to which class
-        return prototypes, classes
+    def pairwise_distances_logits(self, a, b):
+        n = a.shape[0]
+        m = b.shape[0]
+        logits = -((a.unsqueeze(1).expand(n, m, -1) -
+                    b.unsqueeze(0).expand(n, m, -1))**2).sum(dim=2)
+        return logits
+
+
+    def accuracy(self, predictions, targets):
+        predictions = predictions.argmax(dim=1).view(targets.shape)
+        return (predictions == targets).sum().float() / targets.size(0)
     
-    def classify_feats(self, prototypes, classes, feats, targets):
-        # Classify new examples with prototypes and return classification error
-        dist = torch.pow(prototypes[None, :] - feats[:, None], 2).sum(dim=2)  # Squared euclidean distance
-        preds = F.log_softmax(-dist, dim=1)
-        labels = (classes[None, :] == targets[:, None]).long().argmax(dim=-1)
-        acc = (preds.argmax(dim=1) == labels).float().mean()
-        return preds, labels, acc
-    
-    def calculate_loss(self, batch, mode):
-        # Determine training loss for a given support and query set
-        x, targets = batch
-        features = self.net(x)  # Encode all images of support and query set
-        support_feats, query_feats, support_targets, query_targets = split_batch(features, targets)
-        prototypes, classes = ProtoNetModule.calculate_prototypes(support_feats, support_targets)
-        preds, labels, acc = self.classify_feats(prototypes, classes, query_feats, query_targets)
-        loss = F.cross_entropy(preds, labels)
+    def fast_adapt(self, model, batch, ways, shot, mode, metric=None, device=None):
+        if metric is None:
+            metric = self.pairwise_distances_logits
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        data, labels = batch
+        data = data.to(device)
+        labels = labels.to(device)
+        n_items = shot * ways
+
+        # Sort data samples by labels
+        # TODO: Can this be replaced by ConsecutiveLabels ?
+        sort = torch.sort(labels)
+        data = data.squeeze(0)[sort.indices].squeeze(0)
+        labels = labels.squeeze(0)[sort.indices].squeeze(0)
+
+        # Compute support and query embeddings
+        embeddings = model(data)
+        support_indices = np.zeros(data.size(0), dtype=bool)
+        selection = np.arange(ways) * (shot + shot)
+        for offset in range(shot):
+            support_indices[selection + offset] = True
+        query_indices = torch.from_numpy(~support_indices)
+        support_indices = torch.from_numpy(support_indices)
+        support = embeddings[support_indices]
+        support = support.reshape(ways, shot, -1).mean(dim=1)
+        query = embeddings[query_indices]
+        labels = labels[query_indices].long()
+
+        logits = self.pairwise_distances_logits(query, support)
+        loss = F.cross_entropy(logits, labels)
+        acc = self.accuracy(logits, labels)
 
         self.log("%s/loss" % mode, loss)
         self.log("%s/acc" % mode, acc)
-        return loss
+
+        return loss, acc
 
     def training_step(self, batch, batch_idx):
-        return self.calculate_loss(batch, mode="train")
+        loss, _ = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        return loss
 
     def validation_step(self, batch, batch_idx):
-        self.calculate_loss(batch, mode="val")
+        loss, _ = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "val")
+        return loss
 
     def on_validation_epoch_end(self):
          # Retrieve the current validation accuracy from the logged metrics
@@ -72,7 +95,8 @@ class ProtoNetModule(LightningModule):
         self.log("val/acc_best", self.val_acc_best.compute(), on_epoch=True, prog_bar=True)
         
     def test_step(self, batch, batch_idx):
-        self.calculate_loss(batch, mode="test")
+        loss, _ = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "test")
+        return loss
 
     def on_test_epoch_end(self):
          # Retrieve the current validation accuracy from the logged metrics

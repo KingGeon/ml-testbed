@@ -17,6 +17,8 @@ net:
   _target_: src.models.components.conv_lstm_classifier_no_dropout.CONV_LSTM_Classifier
   use_raw_bandpass_filterd : True
   use_fft_bandpass_filterd : True
+  use_eofft : True
+  use_fft_stat : True
   out_channel1_size : 16
   out_channel2_size : 64
   out_channel3_size : 32

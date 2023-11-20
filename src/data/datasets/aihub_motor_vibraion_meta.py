@@ -5,6 +5,7 @@ import pandas as pd
 from tqdm import tqdm
 from typing import List,Tuple
 import librosa
+import math
 import torch
 from torch.utils.data import Dataset, random_split
 from scipy.signal import spectrogram, butter, sosfilt
@@ -49,13 +50,13 @@ def estimate_rpm(numpy_array, sf=8192, f_min=27.6, f_max=29.1, f_r=1, M=60, c=2)
     #print(f'Estimated speed: {estimated_speed} Estimated rpm: {estimated_speed*60}')
     return estimated_speed*60
 
-def engine_order_fft(signal, rpm, sf = 8192, res = 40, ts = 1):
-    # signal shape: (batch,signal_length, channel_size)
-    # 
+def engine_order_fft(signal, rpm, sf = 8192, res = 100, ts = 1):
     _signal = signal[:int(sf*ts)]
     pad_length = int(sf*(res * 60/rpm - ts))
     zero_padded_signal = np.concatenate((_signal, np.zeros(pad_length)))
-    return np.abs(np.fft.fft(zero_padded_signal))[:sf]
+    y = np.abs(np.fft.fft(zero_padded_signal)/len(zero_padded_signal))     
+    y = y[range(math.trunc(len(signal)))]     
+    return y[:sf]
 
 def min_max_scaling(data, new_min=-1, new_max=1):
     min_val = np.min(data)
@@ -77,7 +78,6 @@ class CustomDatasetWithBandpass(Dataset):
         
         return x, y
     def get_targets(self):
-        print(torch.LongTensor(self.targets))
         return torch.LongTensor(self.targets)
 
 class Motor_Vibration():
@@ -94,7 +94,7 @@ class Motor_Vibration():
               "회전체불평형": 4},
         upsample_method : str = "soxr_vhq", #["soxr_vhq", "soxr_hq","kaiser_fast","kaiser_best","sinc_best","sinc_fastest"]
         train: bool = True,
-        csv_num_to_use: int = 500,
+        csv_num_to_use: int = 480,
         root: str = "/home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration"
     ):
         super().__init__()
@@ -163,7 +163,7 @@ class Motor_Vibration():
 
     def process_csv(self, csv_path, fault):
         data = np.genfromtxt(csv_path, delimiter=',', skip_header=9, usecols=(1,), max_rows=4000)
-        data = min_max_scaling(data)
+        #data = min_max_scaling(data)
         data = Motor_Vibration.up_sample(data, self.sampling_frequency_before_upsample, self.sampling_frequency_after_upsample, self.upsample_method)
         rpm = estimate_rpm(data)
         eofft = engine_order_fft(data,rpm)
@@ -179,14 +179,18 @@ class Motor_Vibration():
         for motor in os.listdir(motor_power_path):
             for fault in os.listdir(os.path.join(motor_power_path, motor)):
                 motor_path = os.path.join(motor_power_path, motor, fault)
-                csv_list = os.listdir(motor_path)
+                csv_list = [file for file in os.listdir(motor_path) if file.endswith('.csv')]
                 random.shuffle(csv_list)
+                cnt = 0
                 for csv in csv_list[:int(fault_type_count_list[0]/fault_type_count_list[self.fault_type_dict[fault]]*csv_num_to_use)]:  # Taking first 2000 files after shuffling
-                    csv_path = os.path.join(motor_path, csv)
-                    numpy_array, filtered_numpy_array, eofft, target = self.process_csv(csv_path, fault)
+                    numpy_array = np.load(os.path.join(motor_path, 'numpy_array_' + str(cnt)+ '.npy'))
+                    filtered_numpy_array = np.load(os.path.join(motor_path, 'filtered_numpy_array_' + str(cnt)+ '.npy'))
+                    eofft = np.load(os.path.join(motor_path, 'eofft_' + str(cnt)+ '.npy'))
+                    target = np.load(os.path.join(motor_path, 'target_' + str(cnt)+ '.npy'))
+                    cnt += 1
                     data = np.concatenate([numpy_array,filtered_numpy_array,eofft], axis = -1)
                     data_list.append(data)
-                    target_list.append(target)
+                    target_list.append(target.item())
         return data_list, target_list
     
     def load_data(self):

@@ -70,10 +70,10 @@ class ProtoMAMLModule(L.LightningModule):
         accuracies = []
         losses = []
         self.net.zero_grad()
-        print(f"batch: {batch}")
+        print(f"batch: ㅗ{batch}")
         # Determine gradients for batch of tasks
         for task_batch in batch:
-            imgs, targets = task_batch[0]
+            imgs, targets = task_batch[0], task_batch[1]
             support_imgs, query_imgs, support_targets, query_targets = split_batch(imgs, targets)
             # Perform inner loop adaptation
             local_model, output_weight, output_bias, classes = self.adapt_few_shot(support_imgs, support_targets)

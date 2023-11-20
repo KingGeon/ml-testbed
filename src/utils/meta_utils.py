@@ -114,7 +114,7 @@ class TaskBatchSampler_ProtoMAML:
         super().__init__()
         self.batch_sampler = FewShotBatchSampler_ProtoNet(dataset_targets, N_way, K_shot, include_query, shuffle)
         self.task_batch_size = batch_size
-
+        
     def __iter__(self):
         # Aggregate multiple batches before returning the indices
         batch_list = []
@@ -130,8 +130,9 @@ class TaskBatchSampler_ProtoMAML:
     def get_collate_fn(self):
         # Returns a collate function that converts one big tensor into a list of task-specific tensors
         def collate_fn(item_list):
+
             imgs = torch.stack([img for img, target in item_list], dim=0)
-            targets = torch.stack([target for img, target in item_list], dim=0)
+            targets = torch.stack([torch.LongTensor(target) for img, target in item_list], dim=0)
             imgs = imgs.chunk(self.task_batch_size, dim=0)
             targets = targets.chunk(self.task_batch_size, dim=0)
             return list(zip(imgs, targets))

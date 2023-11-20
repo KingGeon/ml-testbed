@@ -28,7 +28,7 @@ class Motor_Vibration_DataModule(LightningDataModule):
                     "회전체불평형": 4},
                 upsample_method = "soxr_vhq", #["soxr_vhq", "soxr_hq","kaiser_fast","kaiser_best","sinc_best","sinc_fastest"]
                 train: bool = True,
-                csv_num_to_use: int = 500,
+                csv_num_to_use: int = 480,
                 data_dir: str = "/home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration",
                 train_val_split: Tuple[float, float, float] = [0.7, 0.3],
                 batch_size: int = 256,
