@@ -1,0 +1,23 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /data: aihub_motor_vibration_tapnet.yaml
+  - override /model: conv_lstm_classifier_tapnet.yaml
+  - override /callbacks: default.yaml
+  - override /trainer: default.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["aihub_motor_vibration", "TapNet"]
+
+seed: 12345
+
+logger:
+  wandb:
+    project: "aihub_motor_vibration-TapNet"
+    tags: ['TapNet']
+    name: "TapNet"

@@ -1,4 +1,4 @@
-_target_: src.models.protonet_module.ProtoNetModule
+_target_: src.models.tapnet_module.TapNetModule
 
 optimizer:
   _target_: torch.optim.AdamW
