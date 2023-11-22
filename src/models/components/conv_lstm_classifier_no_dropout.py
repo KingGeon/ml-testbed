@@ -277,6 +277,7 @@ class CONV_LSTM_Classifier(nn.Module):
     ):
         super(CONV_LSTM_Classifier, self).__init__()
         self.in_channels = 2 + int(use_raw_bandpass_filterd) + int(use_fft_bandpass_filterd)
+        self.output_size = output_size
         self.mix_style = MixStyle()
         self.dropout  = nn.Dropout(0.5)
         self.in_length = in_length
@@ -348,13 +349,13 @@ class CONV_LSTM_Classifier(nn.Module):
         r_filtered = self.fft_real(y, 1)
         dynamic_features = torch.cat((eofft,r_filtered, x, y), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
-        dynamic_features = self.mix_style(dynamic_features)
+        #dynamic_features = self.mix_style(dynamic_features)
         # Apply layers
-        z = self.silu(self.dropout(self.batchnorm1(self.mix_style(self.conv1(dynamic_features)))))
-        z = self.silu(self.dropout(self.batchnorm2(self.mix_style(self.conv2(z)))))
+        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
+        z = self.silu(self.batchnorm2(self.conv2(z)))
         z = self.maxpool(z)
-        z = self.silu(self.dropout(self.batchnorm3(self.mix_style(self.conv3(z)))))
-        z = self.silu(self.dropout(self.batchnorm4(self.conv4(z))))
+        z = self.silu(self.batchnorm3(self.conv3(z)))
+        z = self.silu(self.batchnorm4(self.conv4(z)))
         z = self.maxpool(z)
         z, _ = self.lstm(z)
         z = z[:, -1, :]  # Take the last time step
@@ -365,8 +366,8 @@ class CONV_LSTM_Classifier(nn.Module):
             hs = self.hs(x)
             z = torch.cat((z,hs), dim=-1) 
         
-        z = self.layer_norm1(self.dropout(self.dense1(z)))
-        z = self.dense3(self.dropout(self.dense2(z)))
+        z = self.layer_norm1(self.dense1(z))
+        z = self.dense3(self.dense2(z))
         return z
     
     def _forward_with_both_filters_fft(self, x):
@@ -378,40 +379,13 @@ class CONV_LSTM_Classifier(nn.Module):
         r_filtered = self.fft_real(y, 1)
         dynamic_features = torch.cat((fft, r_filtered, x, y), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
-        dynamic_features = self.mix_style(dynamic_features)
+        #dynamic_features = self.mix_style(dynamic_features)
         # Apply layers
-        z = self.silu(self.dropout(self.batchnorm1(self.mix_style(self.conv1(dynamic_features)))))
-        z = self.silu(self.dropout(self.batchnorm2(self.mix_style(self.conv2(z)))))
+        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
+        z = self.silu(self.batchnorm2(self.conv2(z)))
         z = self.maxpool(z)
-        z = self.silu(self.dropout(self.batchnorm3(self.mix_style(self.conv3(z)))))
-        z = self.silu(self.dropout(self.batchnorm4(self.conv4(z))))
-        z = self.maxpool(z)
-        z, _ = self.lstm(z)
-        z = z[:, -1, :]  # Take the last time step
-        if self.use_fft_stat:
-            fft_hs = self.fft_hs(fft)
-            z = torch.cat((z,fft_hs), dim=-1)
-        if self.use_stat:
-            hs = self.hs(x)
-            z = torch.cat((z,hs), dim=-1)  
-        z = self.layer_norm1(self.dropout(self.dense1(z)))
-        z = self.dense3(self.dropout(self.dense2(z)))
-        return z
-
-    def _forward_with_raw_filter_only_eofft(self, x):
-        # FFT and Real components
-        eofft = x[:,:,2].unsqueeze(-1)
-        y = x[:,:,1].unsqueeze(-1)
-        x = x[:,:,0].unsqueeze(-1)
-        dynamic_features = torch.cat((eofft, x, y), dim=2)
-        dynamic_features = dynamic_features.transpose(1,2)
-        dynamic_features = self.mix_style(dynamic_features)
-        # Apply layers
-        z = self.silu(self.dropout(self.batchnorm1(self.mix_style(self.conv1(dynamic_features)))))
-        z = self.silu(self.dropout(self.batchnorm2(self.mix_style(self.conv2(z)))))
-        z = self.maxpool(z)
-        z = self.silu(self.dropout(self.batchnorm3(self.mix_style(self.conv3(z)))))
-        z = self.silu(self.dropout(self.batchnorm4(self.conv4(z))))
+        z = self.silu(self.batchnorm3(self.conv3(z)))
+        z = self.silu(self.batchnorm4(self.conv4(z)))
         z = self.maxpool(z)
         z, _ = self.lstm(z)
         z = z[:, -1, :]  # Take the last time step
@@ -421,8 +395,37 @@ class CONV_LSTM_Classifier(nn.Module):
         if self.use_stat:
             hs = self.hs(x)
             z = torch.cat((z,hs), dim=-1) 
-        z = self.layer_norm1(self.dropout(self.dense1(z)))
-        z = self.dense3(self.dropout(self.dense2(z)))
+        
+        z = self.layer_norm1(self.dense1(z))
+        z = self.dense3(self.dense2(z))
+        return z
+
+    def _forward_with_raw_filter_only_eofft(self, x):
+        # FFT and Real components
+        eofft = x[:,:,2].unsqueeze(-1)
+        y = x[:,:,1].unsqueeze(-1)
+        x = x[:,:,0].unsqueeze(-1)
+        dynamic_features = torch.cat((eofft, x, y), dim=2)
+        dynamic_features = dynamic_features.transpose(1,2)
+        #dynamic_features = self.mix_style(dynamic_features)
+        # Apply layers
+        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
+        z = self.silu(self.batchnorm2(self.conv2(z)))
+        z = self.maxpool(z)
+        z = self.silu(self.batchnorm3(self.conv3(z)))
+        z = self.silu(self.batchnorm4(self.conv4(z)))
+        z = self.maxpool(z)
+        z, _ = self.lstm(z)
+        z = z[:, -1, :]  # Take the last time step
+        if self.use_fft_stat:
+            fft_hs = self.fft_hs(eofft)
+            z = torch.cat((z,fft_hs), dim=-1) 
+        if self.use_stat:
+            hs = self.hs(x)
+            z = torch.cat((z,hs), dim=-1) 
+        
+        z = self.layer_norm1(self.dense1(z))
+        z = self.dense3(self.dense2(z))
         return z
     
     def _forward_with_raw_filter_only_fft(self, x):
@@ -433,40 +436,13 @@ class CONV_LSTM_Classifier(nn.Module):
         fft = self.fft_real(x, 1)
         dynamic_features = torch.cat((fft, x, y), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
-        dynamic_features = self.mix_style(dynamic_features)
+        #dynamic_features = self.mix_style(dynamic_features)
         # Apply layers
-        z = self.silu(self.dropout(self.batchnorm1(self.mix_style(self.conv1(dynamic_features)))))
-        z = self.silu(self.dropout(self.batchnorm2(self.mix_style(self.conv2(z)))))
+        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
+        z = self.silu(self.batchnorm2(self.conv2(z)))
         z = self.maxpool(z)
-        z = self.silu(self.dropout(self.batchnorm3(self.mix_style(self.conv3(z)))))
-        z = self.silu(self.dropout(self.batchnorm4(self.conv4(z))))
-        z = self.maxpool(z)
-        z, _ = self.lstm(z)
-        z = z[:, -1, :]  # Take the last time step
-        if self.use_fft_stat:
-            fft_hs = self.fft_hs(fft)
-            z = torch.cat((z,fft_hs), dim=-1) 
-        if self.use_stat:
-            hs = self.hs(x)
-            z = torch.cat((z,hs), dim=-1) 
-        z = self.layer_norm1(self.dropout(self.dense1(z)))
-        z = self.dense3(self.dropout(self.dense2(z)))
-        return z
-    
-    def _forward_with_raw_fft_filters_eofft(self, x):
-        eofft = x[:,:,2].unsqueeze(-1)
-        y = x[:,:,1].unsqueeze(-1)
-        x = x[:,:,0].unsqueeze(-1)
-        r_filtered = self.fft_real(y, 1)
-        dynamic_features = torch.cat((eofft,r_filtered, x), dim=2)
-        dynamic_features = dynamic_features.transpose(1,2)
-        dynamic_features = self.mix_style(dynamic_features)
-        # Apply layers
-        z = self.silu(self.dropout(self.batchnorm1(self.mix_style(self.conv1(dynamic_features)))))
-        z = self.silu(self.dropout(self.batchnorm2(self.mix_style(self.conv2(z)))))
-        z = self.maxpool(z)
-        z = self.silu(self.dropout(self.batchnorm3(self.mix_style(self.conv3(z)))))
-        z = self.silu(self.dropout(self.batchnorm4(self.conv4(z))))
+        z = self.silu(self.batchnorm3(self.conv3(z)))
+        z = self.silu(self.batchnorm4(self.conv4(z)))
         z = self.maxpool(z)
         z, _ = self.lstm(z)
         z = z[:, -1, :]  # Take the last time step
@@ -476,8 +452,37 @@ class CONV_LSTM_Classifier(nn.Module):
         if self.use_stat:
             hs = self.hs(x)
             z = torch.cat((z,hs), dim=-1) 
-        z = self.layer_norm1(self.dropout(self.dense1(z)))
-        z = self.dense3(self.dropout(self.dense2(z)))
+        
+        z = self.layer_norm1(self.dense1(z))
+        z = self.dense3(self.dense2(z))
+        return z
+    
+    def _forward_with_raw_fft_filters_eofft(self, x):
+        eofft = x[:,:,2].unsqueeze(-1)
+        y = x[:,:,1].unsqueeze(-1)
+        x = x[:,:,0].unsqueeze(-1)
+        r_filtered = self.fft_real(y, 1)
+        dynamic_features = torch.cat((eofft,r_filtered, x), dim=2)
+        dynamic_features = dynamic_features.transpose(1,2)
+        #dynamic_features = self.mix_style(dynamic_features)
+        # Apply layers
+        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
+        z = self.silu(self.batchnorm2(self.conv2(z)))
+        z = self.maxpool(z)
+        z = self.silu(self.batchnorm3(self.conv3(z)))
+        z = self.silu(self.batchnorm4(self.conv4(z)))
+        z = self.maxpool(z)
+        z, _ = self.lstm(z)
+        z = z[:, -1, :]  # Take the last time step
+        if self.use_fft_stat:
+            fft_hs = self.fft_hs(eofft)
+            z = torch.cat((z,fft_hs), dim=-1) 
+        if self.use_stat:
+            hs = self.hs(x)
+            z = torch.cat((z,hs), dim=-1) 
+        
+        z = self.layer_norm1(self.dense1(z))
+        z = self.dense3(self.dense2(z))
         return z
     
     def _forward_with_raw_fft_filters_fft(self, x):
@@ -488,24 +493,25 @@ class CONV_LSTM_Classifier(nn.Module):
         r_filtered = self.fft_real(y, 1)
         dynamic_features = torch.cat((fft,r_filtered, x), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
-        dynamic_features = self.mix_style(dynamic_features)
+        #dynamic_features = self.mix_style(dynamic_features)
         # Apply layers
-        z = self.silu(self.dropout(self.batchnorm1(self.mix_style(self.conv1(dynamic_features)))))
-        z = self.silu(self.dropout(self.batchnorm2(self.mix_style(self.conv2(z)))))
+        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
+        z = self.silu(self.batchnorm2(self.conv2(z)))
         z = self.maxpool(z)
-        z = self.silu(self.dropout(self.batchnorm3(self.mix_style(self.conv3(z)))))
-        z = self.silu(self.dropout(self.batchnorm4(self.conv4(z))))
+        z = self.silu(self.batchnorm3(self.conv3(z)))
+        z = self.silu(self.batchnorm4(self.conv4(z)))
         z = self.maxpool(z)
         z, _ = self.lstm(z)
         z = z[:, -1, :]  # Take the last time step
         if self.use_fft_stat:
-            fft_hs = self.fft_hs(fft)
-            z = torch.cat((z,fft_hs), dim=-1)
+            fft_hs = self.fft_hs(eofft)
+            z = torch.cat((z,fft_hs), dim=-1) 
         if self.use_stat:
             hs = self.hs(x)
-            z = torch.cat((z,hs), dim=-1)  
-        z = self.layer_norm1(self.dropout(self.dense1(z)))
-        z = self.dense3(self.dropout(self.dense2(z)))
+            z = torch.cat((z,hs), dim=-1) 
+        
+        z = self.layer_norm1(self.dense1(z))
+        z = self.dense3(self.dense2(z))
         return z
     
     def _forward_without_filters_eofft(self, x):
@@ -514,25 +520,27 @@ class CONV_LSTM_Classifier(nn.Module):
         x = x[:,:,0].unsqueeze(-1)
         dynamic_features = torch.cat((eofft, x), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
-        dynamic_features = self.mix_style(dynamic_features)
+        #dynamic_features = self.mix_style(dynamic_features)
         # Apply layers
-        z = self.silu(self.dropout(self.batchnorm1(self.mix_style(self.conv1(dynamic_features)))))
-        z = self.silu(self.dropout(self.batchnorm2(self.mix_style(self.conv2(z)))))
+        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
+        z = self.silu(self.batchnorm2(self.conv2(z)))
         z = self.maxpool(z)
-        z = self.silu(self.dropout(self.batchnorm3(self.mix_style(self.conv3(z)))))
-        z = self.silu(self.dropout(self.batchnorm4(self.conv4(z))))
+        z = self.silu(self.batchnorm3(self.conv3(z)))
+        z = self.silu(self.batchnorm4(self.conv4(z)))
         z = self.maxpool(z)
         z, _ = self.lstm(z)
         z = z[:, -1, :]  # Take the last time step
         if self.use_fft_stat:
             fft_hs = self.fft_hs(eofft)
-            z = torch.cat((z,fft_hs), dim=-1)
+            z = torch.cat((z,fft_hs), dim=-1) 
         if self.use_stat:
             hs = self.hs(x)
-            z = torch.cat((z,hs), dim=-1)  
-        z = self.layer_norm1(self.dropout(self.dense1(z)))
-        z = self.dense3(self.dropout(self.dense2(z)))
+            z = torch.cat((z,hs), dim=-1) 
+        
+        z = self.layer_norm1(self.dense1(z))
+        z = self.dense3(self.dense2(z))
         return z
+    
     def _forward_without_filters_fft(self, x):
         # FFT and Real components
         eofft = x[:,:,2].unsqueeze(-1)
@@ -540,25 +548,25 @@ class CONV_LSTM_Classifier(nn.Module):
         fft = self.fft_real(x, 1)
         dynamic_features = torch.cat((fft, x), dim=2)
         dynamic_features = dynamic_features.transpose(1,2)
-        dynamic_features = self.mix_style(dynamic_features)
+        #dynamic_features = self.mix_style(dynamic_features)
 
         # Apply layers
-        z = self.silu(self.dropout(self.batchnorm1(self.mix_style(self.conv1(dynamic_features)))))
-        z = self.silu(self.dropout(self.batchnorm2(self.mix_style(self.conv2(z)))))
+        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
+        z = self.silu(self.batchnorm2(self.conv2(z)))
         z = self.maxpool(z)
-        z = self.silu(self.dropout(self.batchnorm3(self.mix_style(self.conv3(z)))))
-        z = self.silu(self.dropout(self.batchnorm4(self.conv4(z))))
+        z = self.silu(self.batchnorm3(self.conv3(z)))
+        z = self.silu(self.batchnorm4(self.conv4(z)))
         z = self.maxpool(z)
         z, _ = self.lstm(z)
         z = z[:, -1, :]  # Take the last time step
         if self.use_fft_stat:
-            fft_hs = self.fft_hs(fft)
+            fft_hs = self.fft_hs(eofft)
             z = torch.cat((z,fft_hs), dim=-1) 
         if self.use_stat:
             hs = self.hs(x)
             z = torch.cat((z,hs), dim=-1) 
-        z = self.layer_norm1(self.dropout(self.dense1(z)))
-        z = self.dense3(self.dropout(self.dense2(z)))
+        z = self.layer_norm1(self.dense1(z))
+        z = self.dense3(self.dense2(z))
         return z
 
     def predict(self, x):

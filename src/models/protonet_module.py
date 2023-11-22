@@ -23,9 +23,18 @@ class ProtoNetModule(LightningModule):
         self.criterion = torch.nn.CrossEntropyLoss()
         self.N_WAY = N_WAY
         self.K_SHOT = K_SHOT
-        
+        self.train_acc = Accuracy(task="multiclass", num_classes= N_WAY)
+        self.val_acc = Accuracy(task="multiclass", num_classes= N_WAY)
+        self.test_acc = Accuracy(task="multiclass", num_classes= N_WAY)
+
+        # for averaging loss across batches
+        self.train_loss = MeanMetric()
+        self.val_loss = MeanMetric()
+        self.test_loss = MeanMetric()
+
         self.val_acc_best = MaxMetric()
         self.test_acc_best = MaxMetric()
+
     def pairwise_distances_logits(self, a, b):
         n = a.shape[0]
         m = b.shape[0]
@@ -46,14 +55,12 @@ class ProtoNetModule(LightningModule):
         data, labels = batch
         data = data.to(device)
         labels = labels.to(device)
-        n_items = shot * ways
 
         # Sort data samples by labels
         # TODO: Can this be replaced by ConsecutiveLabels ?
         sort = torch.sort(labels)
         data = data.squeeze(0)[sort.indices].squeeze(0)
         labels = labels.squeeze(0)[sort.indices].squeeze(0)
-
         # Compute support and query embeddings
         embeddings = model(data)
         support_indices = np.zeros(data.size(0), dtype=bool)
@@ -66,44 +73,49 @@ class ProtoNetModule(LightningModule):
         support = support.reshape(ways, shot, -1).mean(dim=1)
         query = embeddings[query_indices]
         labels = labels[query_indices].long()
-
         logits = self.pairwise_distances_logits(query, support)
-        loss = F.cross_entropy(logits, labels)
-        acc = self.accuracy(logits, labels)
+ 
 
-        self.log("%s/loss" % mode, loss)
-        self.log("%s/acc" % mode, acc)
-
-        return loss, acc
+        return logits, labels
 
     def training_step(self, batch, batch_idx):
-        loss, _ = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        loss = F.cross_entropy(logits, labels)
+        self.train_loss(loss)
+        self.train_acc(logits, labels)
+        self.log('train/loss', self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('train/acc', self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
         return loss
+    
+    def on_train_epoch_end(self):
+        pass
+    
+    def on_validation_epoch_start(self):
+        pass
 
     def validation_step(self, batch, batch_idx):
-        loss, _ = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "val")
-        return loss
-
+        logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "val")
+        loss = F.cross_entropy(logits, labels)
+        self.val_loss(loss)
+        self.val_acc(logits, labels)
+        self.log('val/loss', self.val_loss, on_step=False, on_epoch=True, prog_bar=False)
+        self.log('val/acc', self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
+    
     def on_validation_epoch_end(self):
-         # Retrieve the current validation accuracy from the logged metrics
-        current_val_acc = self.trainer.callback_metrics.get("val/acc")
-
-        # Update the best validation accuracy metric
-        self.val_acc_best.update(current_val_acc)
-
-        # Log the best validation accuracy
-        self.log("val/acc_best", self.val_acc_best.compute(), on_epoch=True, prog_bar=True)
+        acc = self.val_acc.compute()
+        self.val_acc_best(acc)
+        self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True), 
         
     def test_step(self, batch, batch_idx):
-        loss, _ = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "test")
-        return loss
+        logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "test")
+        loss = F.cross_entropy(logits, labels)
+        self.test_loss(loss)
+        self.test_acc(logits, labels)
+        self.log('test/loss', self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('test/acc', self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_end(self):
-         # Retrieve the current validation accuracy from the logged metrics
-        current_test_acc = self.trainer.callback_metrics.get("test/acc")
-
-        # Update the best validation accuracy metric
-        self.test_acc_best.update(current_test_acc)
+        pass
 
     def configure_optimizers(self):
         optimizer=self.hparams.optimizer(params=self.parameters())

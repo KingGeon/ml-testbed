@@ -33,31 +33,31 @@ hydra:
     direction: maximize
 
     # total number of runs that will be executed
-    n_trials: 60
+    n_trials: 30
 
     # choose Optuna hyperparameter sampler
     # you can choose bayesian sampler (tpe), random search (without optimization), grid sampler, and others
     # docs: https://optuna.readthedocs.io/en/stable/reference/samplers.html
     sampler:
       _target_: optuna.samplers.TPESampler
-      seed: 1234
-      n_startup_trials: 10 # number of random sampling runs before optimization starts
+      seed: 18
+      n_startup_trials: 5 # number of random sampling runs before optimization starts
 
     # define hyperparameter search space
     params:
-      model.optimizer.lr: interval(0.0001, 0.1)
+      model.optimizer.lr: interval(0.001, 0.1)
       model.net.use_stat : choice(True, False)
       model.net.use_fft_stat : choice(True, False)
       model.net.use_eofft: choice(True, False)
-      model.net.use_raw_bandpass_filterd: True
+      model.net.use_raw_bandpass_filterd: choice(True, False)
       model.net.use_fft_bandpass_filterd: choice(True, False)
       model.net.out_channel1_size: choice(16, 8)
-      model.net.out_channel2_size: choice(32, 16)
+      model.net.out_channel2_size: choice(64, 32)
       model.net.out_channel3_size: choice(32, 16)
       model.net.out_channel4_size: choice(8, 4, 1)
-      model.net.kernel1_size: choice(64, 32)
-      model.net.kernel2_size: choice(16, 8)
-      model.net.kernel3_size: choice(8, 4)
-      model.net.kernel4_size: 4
-      model.net.lstm_hidden_size: choice(128, 64)
+      model.net.kernel1_size: choice(128, 64, 32)
+      model.net.kernel2_size: choice(32, 16)
+      model.net.kernel3_size: choice(16, 8)
+      model.net.kernel4_size: choice(8, 4)
+      model.net.lstm_hidden_size: choice(256, 128, 64)
 

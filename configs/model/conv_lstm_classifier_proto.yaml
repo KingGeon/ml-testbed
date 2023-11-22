@@ -10,8 +10,8 @@ scheduler:
   _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
   _partial_: true
   mode: min
-  factor: 0.1
-  patience: 20
+  factor: 0
+  patience: 10
 
 net:
   _target_: src.models.components.conv_lstm_classifier_no_dropout.CONV_LSTM_Classifier
