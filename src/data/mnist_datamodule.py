@@ -1,5 +1,5 @@
 from typing import Any, Dict, Optional, Tuple
-
+import gc
 import torch
 from lightning import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
@@ -115,7 +115,13 @@ class MNISTDataModule(LightningDataModule):
 
     def teardown(self, stage: Optional[str] = None):
         """Clean up after fit or test."""
-        pass
+        # Explicitly delete the datasets
+        self.data_train = None
+        self.data_val = None
+        self.data_test = None
+
+        # Call the garbage collector
+        gc.collect()
 
     def state_dict(self):
         """Extra things to save to checkpoint."""

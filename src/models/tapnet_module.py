@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchmetrics import MaxMetric
+from torchmetrics import MaxMetric, MeanMetric
+from torchmetrics.classification.accuracy import Accuracy
 from lightning import LightningModule
 import torch.optim as optim
 import numpy as np
@@ -28,8 +29,18 @@ class TapNetModule(LightningModule):
         self.output_dimension = net.output_size
         self.projection_layer = nn.Linear(net.output_size, self.N_WAY, bias=False)
 
+        self.train_acc = Accuracy(task="multiclass", num_classes= N_WAY)
+        self.val_acc = Accuracy(task="multiclass", num_classes= N_WAY)
+        self.test_acc = Accuracy(task="multiclass", num_classes= N_WAY)
+
+        # for averaging loss across batches
+        self.train_loss = MeanMetric()
+        self.val_loss = MeanMetric()
+        self.test_loss = MeanMetric()
+
         self.val_acc_best = MaxMetric()
         self.test_acc_best = MaxMetric()
+
     def fast_adapt_tapnet(self, model, batch, ways, shot, mode, device=None):
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -70,12 +81,11 @@ class TapNetModule(LightningModule):
         # 최종 결과의 형태를 변경
         r_t = r_t.view(batchsize_q, -1)
         pow_t = self.compute_power(batchsize_q, query_set, M, self.N_WAY, mode, phi_ind=phi_ind)
-        acc = self.compute_accuracy(query_labels, r_t, pow_t, phi_ind=phi_ind)
+        pred = self.predict(query_labels, r_t, pow_t, phi_ind=phi_ind)
         loss = self.compute_loss(query_labels, r_t, pow_t, self.N_WAY)
-        self.log("%s/loss" % mode, loss)
-        self.log("%s/acc" % mode, acc)
 
-        return loss, acc
+
+        return pred, query_labels, loss
 
     def select_phi(self, prototype, avg_pow):
         u_avg = 2 * self.projection_layer(prototype)  
@@ -133,14 +143,14 @@ class TapNetModule(LightningModule):
         u = 2 * self.projection_layer(r_t) - pow_t
         return F.cross_entropy(u, t)
 
-    def compute_accuracy(self, t_data, r_t, pow_t, phi_ind=None):
+    def predict(self, t_data, r_t, pow_t, phi_ind=None):
         ro = 2 * self.projection_layer(r_t)  # 여기서 self.projection_layer는 PyTorch의 레이어로 정의되어야 함
         ro_t = ro.detach()[:, phi_ind]  # .detach() 사용
         u = ro_t - pow_t
 
         t_est = torch.argmax(torch.softmax(u, dim=1), dim=1)  # PyTorch의 argmax와 softmax 사용
 
-        return (t_est == torch.tensor(t_data, dtype=torch.long)).float().mean() 
+        return t_est
 
     def Projection_Space(self, prototype, batchsize, nb_class, mode="train", phi_ind=None):
         device = prototype.device
@@ -174,33 +184,40 @@ class TapNetModule(LightningModule):
 
     
     def training_step(self, batch, batch_idx):
-        loss, _ = self.fast_adapt_tapnet(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        pred, labels, loss = self.fast_adapt_tapnet(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        self.train_loss(loss)
+        self.train_acc(pred, labels)
+        self.log('train/loss', self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('train/acc', self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
         return loss
+    
+    def on_train_epoch_end(self):
+        pass
+    
+    def on_validation_epoch_start(self):
+        pass
 
     def validation_step(self, batch, batch_idx):
-        loss, _ = self.fast_adapt_tapnet(self.net, batch, self.N_WAY, self.K_SHOT, mode = "val")
-        return loss
-
+        pred, labels, loss = self.fast_adapt_tapnet(self.net, batch, self.N_WAY, self.K_SHOT, mode = "val")
+        self.val_loss(loss)
+        self.val_acc(pred, labels)
+        self.log('val/loss', self.val_loss, on_step=False, on_epoch=True, prog_bar=False)
+        self.log('val/acc', self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
+    
     def on_validation_epoch_end(self):
-         # Retrieve the current validation accuracy from the logged metrics
-        current_val_acc = self.trainer.callback_metrics.get("val/acc")
-
-        # Update the best validation accuracy metric
-        self.val_acc_best.update(current_val_acc)
-
-        # Log the best validation accuracy
-        self.log("val/acc_best", self.val_acc_best.compute(), on_epoch=True, prog_bar=True)
+        acc = self.val_acc.compute()
+        self.val_acc_best(acc)
+        self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True), 
         
     def test_step(self, batch, batch_idx):
-        loss, _ = self.fast_adapt_tapnet(self.net, batch, self.N_WAY, self.K_SHOT, mode = "test")
-        return loss
+        pred, labels, loss = self.fast_adapt_tapnet(self.net, batch, self.N_WAY, self.K_SHOT, mode = "test")
+        self.test_loss(loss)
+        self.test_acc(pred, labels)
+        self.log('test/loss', self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('test/acc', self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_end(self):
-         # Retrieve the current validation accuracy from the logged metrics
-        current_test_acc = self.trainer.callback_metrics.get("test/acc")
-
-        # Update the best validation accuracy metric
-        self.test_acc_best.update(current_test_acc)
+        pass
 
     def configure_optimizers(self):
         optimizer=self.hparams.optimizer(params=self.parameters())

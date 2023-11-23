@@ -8,6 +8,7 @@ sys.path.append("../../..")
 from lightning import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
 import pyrootutils
+import gc
 path = pyrootutils.find_root(search_from=__file__, indicator=".project-root")
 pyrootutils.set_root(path = path,
                      project_root_env_var = True,
@@ -72,9 +73,9 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
             task_transforms=train_transforms,
             num_tasks= 1000,
         )
-        return DataLoader(dataset=train_tasks,
-                          num_workers=self.hparams.num_workers,
-                          pin_memory=self.hparams.pin_memory,
+        return DataLoader(dataset = train_tasks,
+                          num_workers = self.hparams.num_workers,
+                          pin_memory = self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers,shuffle = True)
         
     def val_dataloader(self):
@@ -91,9 +92,9 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
             num_tasks=500,
         )
         return DataLoader(dataset = valid_tasks,
-                          num_workers=self.hparams.num_workers,
-                          pin_memory=self.hparams.pin_memory,
-                          persistent_workers=self.hparams.persistent_workers)
+                          num_workers = self.hparams.num_workers,
+                          pin_memory = self.hparams.pin_memory,
+                          persistent_workers = self.hparams.persistent_workers)
     
     def test_dataloader(self):
         self.data_test = l2l.data.MetaDataset(self.data_test)
@@ -105,13 +106,22 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
         ]
         test_tasks = l2l.data.Taskset(
             self.data_test,
-            task_transforms=test_transforms,
+            task_transforms = test_transforms,
             num_tasks=500,
         )
-        return DataLoader(dataset=test_tasks,
-                          num_workers=self.hparams.num_workers,
-                          pin_memory=self.hparams.pin_memory,
-                          persistent_workers=self.hparams.persistent_workers)
+        return DataLoader(dataset = test_tasks,
+                          num_workers = self.hparams.num_workers,
+                          pin_memory = self.hparams.pin_memory,
+                          persistent_workers = self.hparams.persistent_workers)
+    def teardown(self, stage: Optional[str] = None):
+        """Clean up after fit or test."""
+        # Explicitly delete the datasets
+        self.data_train = None
+        self.data_val = None
+        self.data_test = None
+
+        # Call the garbage collector
+        gc.collect()
     
      
 if __name__ == '__main__':

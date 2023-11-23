@@ -1,5 +1,5 @@
 from typing import List, Optional, Tuple
-
+import gc
 import hydra
 import lightning as L
 import pyrootutils
@@ -101,11 +101,14 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
 
     # merge train and test metrics
     metric_dict = {**train_metrics, **test_metrics}
-
+    del model, datamodule, trainer  # Replace with your actual objects
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
     return metric_dict, object_dict
 
 
-@hydra.main(version_base="1.3", config_path="../configs", config_name="train_proto.yaml")
+@hydra.main(version_base="1.3", config_path="../configs", config_name="train_proto_iter2.yaml")
 def main(cfg: DictConfig) -> Optional[float]:
     # apply extra utilities
     # (e.g. ask for tags if none are provided in cfg, print cfg tree, etc.)
