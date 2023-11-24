@@ -156,17 +156,17 @@ class Health_State_Analysis(nn.Module):
         return stacked_stats.view(inputs.shape[0],-1)
     
 class FFT_Health_State_Analysis(nn.Module):
-    def __init__(self):
+    def __init__(self, topk):
         super(FFT_Health_State_Analysis, self).__init__()
-
+        self.topk = topk
     def forward(self, inputs):
         
-        top_k_mean_freq = torch.mean(torch.topk(inputs, k=10, axis = 1).indices.float(),axis = 1)  
-        top_k_rms = torch.sqrt(torch.mean(torch.topk(inputs, k=10, axis = 1).values**2, dim=1))
+        top3_mean_freq = torch.mean(torch.topk(inputs, k=3, axis = 1).indices.float(),axis = 1)  
+        top3_rms = torch.sqrt(torch.mean(torch.topk(inputs, k=3, axis = 1).values**2, dim=1))
         max_freq = torch.Tensor(torch.topk(inputs, k=1, axis = 1).indices.float()).squeeze(-1) 
         max_rms = torch.sqrt(torch.mean(torch.topk(inputs, k=1, axis = 1).values**2, dim=1))
-        top_k_freqs = torch.topk(inputs, k=50, axis = 1).indices.float() 
-        stacked_stats = torch.stack([top_k_mean_freq,top_k_rms,max_freq,max_rms], dim=1)
+        top_k_freqs = torch.topk(inputs, k=self.topk, axis = 1).indices.float() 
+        stacked_stats = torch.stack([top3_mean_freq,top3_rms,max_freq,max_rms], dim=1)
         stacked_stats = torch.cat([stacked_stats, top_k_freqs], dim=1)
         return stacked_stats.view(inputs.shape[0],-1)
 
@@ -275,7 +275,8 @@ class CONV_LSTM_Classifier(nn.Module):
         use_fft_bandpass_filterd: bool = True,
         use_eofft: bool = True,
         use_fft_stat: bool = True,
-        use_stat: bool = True
+        use_stat: bool = True,
+        topk_freq: int = 20
     ):
         super(CONV_LSTM_Classifier, self).__init__()
         self.in_channels = 2 + int(use_raw_bandpass_filterd) + int(use_fft_bandpass_filterd)
@@ -284,9 +285,10 @@ class CONV_LSTM_Classifier(nn.Module):
         self.dropout  = nn.Dropout(0.5)
         self.in_length = in_length
         self.fft_real = FFTReal()
-        self.fft_hs = FFT_Health_State_Analysis()
+        self.fft_hs = FFT_Health_State_Analysis(topk = topk_freq)
         self.hs = Health_State_Analysis()
-        self.layer_norm1 = nn.LayerNorm(64)
+        self.layer_norm1 = nn.LayerNorm(dense1_out_size)
+        self.layer_norm2 = nn.LayerNorm(dense2_out_size)
         self.silu = nn.SiLU()
         self.maxpool = nn.MaxPool1d(kernel_size=2)
         self.use_raw_bandpass_filterd = use_raw_bandpass_filterd
@@ -307,7 +309,7 @@ class CONV_LSTM_Classifier(nn.Module):
         # LSTM layer
         self.lstm = nn.LSTM(input_size=self.conv4_out, hidden_size=lstm_hidden_size, batch_first=True, bidirectional=True)
         # Since LSTM is bidirectional, we concatenate the outputs, hence the hidden size is doubled
-        self.dense1 = nn.Linear(lstm_hidden_size * 2 + 16 * int(self.use_stat) + 54 * int(self.use_fft_stat), dense1_out_size)  # Hidden size is doubled because LSTM is bidirectional
+        self.dense1 = nn.Linear(lstm_hidden_size * 2 + 16 * int(self.use_stat) +(topk_freq + 4) * int(self.use_fft_stat), dense1_out_size)  # Hidden size is doubled because LSTM is bidirectional
         # Dense layers
         self.dense2 = nn.Linear(dense1_out_size, dense2_out_size)
         self.dense3 = nn.Linear(dense2_out_size, output_size)
@@ -399,7 +401,7 @@ class CONV_LSTM_Classifier(nn.Module):
             z = torch.cat((z,hs), dim=-1) 
         
         z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.dense2(z))
+        z = self.dense3(self.layer_norm2(self.dense2(z)))
         return z
 
     def _forward_with_raw_filter_only_eofft(self, x):
@@ -427,7 +429,7 @@ class CONV_LSTM_Classifier(nn.Module):
             z = torch.cat((z,hs), dim=-1) 
         
         z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.dense2(z))
+        z = self.dense3(self.layer_norm2(self.dense2(z)))
         return z
     
     def _forward_with_raw_filter_only_fft(self, x):
@@ -456,7 +458,7 @@ class CONV_LSTM_Classifier(nn.Module):
             z = torch.cat((z,hs), dim=-1) 
         
         z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.dense2(z))
+        z = self.dense3(self.layer_norm2(self.dense2(z)))
         return z
     
     def _forward_with_raw_fft_filters_eofft(self, x):
@@ -484,7 +486,7 @@ class CONV_LSTM_Classifier(nn.Module):
             z = torch.cat((z,hs), dim=-1) 
         
         z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.dense2(z))
+        z = self.dense3(self.layer_norm2(self.dense2(z)))
         return z
     
     def _forward_with_raw_fft_filters_fft(self, x):
@@ -513,7 +515,7 @@ class CONV_LSTM_Classifier(nn.Module):
             z = torch.cat((z,hs), dim=-1) 
         
         z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.dense2(z))
+        z = self.dense3(self.layer_norm2(self.dense2(z)))
         return z
     
     def _forward_without_filters_eofft(self, x):
@@ -540,7 +542,7 @@ class CONV_LSTM_Classifier(nn.Module):
             z = torch.cat((z,hs), dim=-1) 
         
         z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.dense2(z))
+        z = self.dense3(self.layer_norm2(self.dense2(z)))
         return z
     
     def _forward_without_filters_fft(self, x):
@@ -568,7 +570,7 @@ class CONV_LSTM_Classifier(nn.Module):
             hs = self.hs(x)
             z = torch.cat((z,hs), dim=-1) 
         z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.dense2(z))
+        z = self.dense3(self.layer_norm2(self.dense2(z)))
         return z
 
     def predict(self, x):

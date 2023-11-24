@@ -33,34 +33,35 @@ hydra:
     direction: maximize
 
     # total number of runs that will be executed
-    n_trials: 50
+    n_trials: 150
 
     # choose Optuna hyperparameter sampler
     # you can choose bayesian sampler (tpe), random search (without optimization), grid sampler, and others
     # docs: https://optuna.readthedocs.io/en/stable/reference/samplers.html
     sampler:
       _target_: optuna.samplers.TPESampler
-      seed: 18
-      n_startup_trials: 5 # number of random sampling runs before optimization starts
+      seed: 486
+      n_startup_trials: 20 # number of random sampling runs before optimization starts
 
     # define hyperparameter search space
     params:
-      model.optimizer.lr: interval(0.0001, 0.1)
+      model.optimizer.lr: 0.01
       model.net.use_stat : choice(True, False)
       model.net.use_fft_stat : choice(True, False)
       model.net.use_eofft: True
-      model.net.use_raw_bandpass_filterd: True
+      model.net.use_raw_bandpass_filterd: choice(True, False)
       model.net.use_fft_bandpass_filterd: choice(True, False)
-      model.net.out_channel1_size: choice(16, 8)
-      model.net.out_channel2_size: choice(64, 32)
-      model.net.out_channel3_size: choice(32, 16)
-      model.net.out_channel4_size: choice(32, 16, 8)
-      model.net.kernel1_size: choice(64, 32, 24)
-      model.net.kernel2_size: choice(32, 24, 16)
-      model.net.kernel3_size: choice(16, 12, 8)
-      model.net.kernel4_size: choice(8, 6, 4)
-      model.net.lstm_hidden_size: choice(512, 256, 128, 64, 32)
-      model.net.dense1_out_size : choice(512, 256, 128, 64)
-      model.net.dense2_out_size : choice(512, 256, 128, 64, 16)
-      model.net.output_size : choice(64, 32, 16, 5)
+      model.net.out_channel1_size: choice(64, 32, 24)
+      model.net.out_channel2_size: choice(128, 64)
+      model.net.out_channel3_size: choice(64, 32, 16)
+      model.net.out_channel4_size: choice(32, 16)
+      model.net.kernel1_size: choice(64, 32)
+      model.net.kernel2_size: choice(32, 24)
+      model.net.kernel3_size: choice(24, 16)
+      model.net.kernel4_size: choice(16, 8)
+      model.net.lstm_hidden_size: choice(128, 100, 64)
+      model.net.dense1_out_size : choice(312, 256, 180)
+      model.net.dense2_out_size : choice(256, 128, 64)
+      model.net.output_size : choice(32, 24, 16)
+      model.net.topk_freq : choice(5, 10, 15, 20)
 

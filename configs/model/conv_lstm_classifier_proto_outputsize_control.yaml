@@ -19,6 +19,7 @@ net:
   use_fft_bandpass_filterd : True
   use_eofft : True
   use_fft_stat : True
+  topk_freq : 10
   use_stat : True
   out_channel1_size : 16
   out_channel2_size : 64
