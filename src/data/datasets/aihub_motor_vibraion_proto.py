@@ -11,6 +11,31 @@ from torch.utils.data import Dataset, random_split
 from scipy.signal import spectrogram, butter, sosfilt
 from scipy.stats import kurtosis
 from torch.utils.data import Dataset
+import scipy
+import scipy.signal as signal
+def sampling_with_bandpass(data , sf, rf):
+    rotational_frequency = rf  # 회전 주파수 30Hz
+    frequencies_to_filter = [rotational_frequency * i for i in range(1, 9)]  # 1배, 2배, 3배, 4배 주파수
+    frequencies_to_filter.append(120)  # 추가적으로 120Hz 필터링
+
+    # 대역폭 설정 (+/- 10Hz)
+    bandwidth = 10
+
+    # 예제 신호 생성: 여러 주파수 성분과 잡음 포함
+
+    # 필터링된 신호를 저장할 딕셔너리
+    filtered_signals = []
+
+    # 각 주파수 대역에 대한 필터링
+    for f in frequencies_to_filter:
+        band = [f - bandwidth, f + bandwidth]
+        b, a = signal.butter(4, [band[0]/(sf/2), band[1]/(sf/2)], btype='band')
+        analytic_signal = signal.hilbert(signal.filtfilt(b, a, data))
+        # Compute the envelope
+        envelope = np.abs(analytic_signal)
+        filtered_signals.append(envelope)
+
+    return np.stack(filtered_signals, axis=1)
 
 def original_fft(signal,sf):
     _signal = signal
@@ -64,6 +89,12 @@ def min_max_scaling(data, new_min=-1, new_max=1):
     scaled_data = new_min + (data - min_val) * (new_max - new_min) / (max_val - min_val)
     return scaled_data
 
+def standard_scaling(data):
+    mean = np.mean(data,axis = 0 )
+    std = np.std(data,axis = 0 )
+    scaled_data = (data - mean) / std
+    return scaled_data
+
 class CustomDatasetWithBandpass(Dataset):
     def __init__(self, data, targets):
         self.data = data
@@ -114,7 +145,34 @@ class Motor_Vibration():
         self.train = train
         self.csv_num_to_use = csv_num_to_use
         self.root = root
-    
+    def envelope_spectrum(self, signal, fs):
+        """
+        Compute the envelope spectrum of a signal.
+        
+        Args:
+        signal (numpy array): Input signal.
+        fs (float): Sampling frequency of the signal.
+        
+        Returns:
+        freqs (numpy array): Frequencies of the envelope spectrum.
+        envelope (numpy array): Envelope spectrum of the signal.
+        """
+        # Compute the analytic signal using Hilbert transform
+        analytic_signal = scipy.signal.hilbert(signal)
+        # Compute the envelope
+        envelope = np.abs(analytic_signal)
+
+        # Compute the FFT of the envelope
+        envelope_fft = np.fft.fft(envelope)
+        # Compute the corresponding frequencies
+        freqs = np.fft.fftfreq(len(envelope), 1 / fs)
+        
+        # Take only the positive frequencies and their corresponding FFT values
+
+        freqs = freqs[:]
+        envelope_fft = np.abs(envelope_fft[:])
+
+        return envelope, envelope_fft
     @staticmethod
     def up_sample(input_wav, origin_sr, resample_sr, upsample_method):
         resample = librosa.resample(y=input_wav, orig_sr=origin_sr, target_sr=resample_sr, res_type=upsample_method)
@@ -173,9 +231,11 @@ class Motor_Vibration():
         #data = min_max_scaling(data)
         data = Motor_Vibration.up_sample(data, self.sampling_frequency_before_upsample, self.sampling_frequency_after_upsample, self.upsample_method)
         rpm = estimate_rpm(data)
+        bandpassed_signal = sampling_with_bandpass(data, self.sampling_frequency_after_upsample, rpm/60)
         eofft = engine_order_fft(data,rpm)
-        filtered_data = self.custom_filtering(data,sf = self.sampling_frequency_after_upsample)
-        return data.reshape(-1,1), filtered_data.reshape(-1,1), eofft.reshape(-1,1), self.fault_type_dict[fault]
+        envelope, envelop_spectrum = self.envelope_spectrum(data,self.sampling_frequency_after_upsample)
+
+        return data.reshape(-1,1), bandpassed_signal.reshape(-1,9), envelope.reshape(-1,1), envelop_spectrum.reshape(-1,1), eofft.reshape(-1,1), self.fault_type_dict[fault]
 
     # Process the CSV files for each motor power
     def process_motor_power(self, data_root, motor_power, csv_num_to_use, fault_type_count_list):
@@ -190,14 +250,31 @@ class Motor_Vibration():
                 random.shuffle(csv_list)
                 cnt = 0
                 for csv in csv_list[:int(fault_type_count_list[0]/fault_type_count_list[self.fault_type_dict[fault]]*csv_num_to_use)]:  # Taking first 2000 files after shuffling
+                    '''
+                    numpy_array, bandpassed_signal, envelope, envelop_spectrum, eofft, target = self.process_csv(os.path.join(motor_path,csv), fault)
+                    np.save(os.path.join(motor_path, 'numpy_array_' + str(cnt)+ '.npy'), numpy_array)
+                    np.save(os.path.join(motor_path, 'bandpassed_signal_' + str(cnt)+ '.npy'), bandpassed_signal)
+                    np.save(os.path.join(motor_path, 'envelope_' + str(cnt)+ '.npy'), envelope)
+                    np.save(os.path.join(motor_path, 'envelop_spectrum_' + str(cnt)+ '.npy'), envelop_spectrum)
+                    np.save(os.path.join(motor_path, 'eofft_' + str(cnt)+ '.npy'), eofft)
+                    np.save(os.path.join(motor_path, 'target_' + str(cnt)+ '.npy'), target)
+                    cnt += 1
+                    data = np.concatenate([numpy_array,bandpassed_signal, envelope, envelop_spectrum, eofft], axis = -1)
+                    data_list.append(data)
+                    target_list.append(target)
+                    '''
+              
                     numpy_array = np.load(os.path.join(motor_path, 'numpy_array_' + str(cnt)+ '.npy'))
-                    filtered_numpy_array = np.load(os.path.join(motor_path, 'filtered_numpy_array_' + str(cnt)+ '.npy'))
+                    bandpassed_signal_array = np.load(os.path.join(motor_path, 'bandpassed_signal_' + str(cnt)+ '.npy'))
+                    envelope_array = np.load(os.path.join(motor_path, 'envelope_' + str(cnt)+ '.npy'))
+                    envelop_spectrum_array = np.load(os.path.join(motor_path, 'envelop_spectrum_' + str(cnt)+ '.npy'))
                     eofft = np.load(os.path.join(motor_path, 'eofft_' + str(cnt)+ '.npy'))
                     target = np.load(os.path.join(motor_path, 'target_' + str(cnt)+ '.npy'))
                     cnt += 1
-                    data = np.concatenate([numpy_array,filtered_numpy_array,eofft], axis = -1)
+                    data = np.concatenate([numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft], axis = -1)
                     data_list.append(data)
                     target_list.append(target.item())
+        
         return data_list, target_list
     
     def load_data(self):

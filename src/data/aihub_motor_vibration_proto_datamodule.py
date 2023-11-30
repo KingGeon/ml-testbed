@@ -71,7 +71,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
         train_tasks = l2l.data.Taskset(
             self.data_train,
             task_transforms=train_transforms,
-            num_tasks= 1000,
+            num_tasks= 500,
         )
         return DataLoader(dataset = train_tasks,
                           num_workers = self.hparams.num_workers,

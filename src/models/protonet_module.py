@@ -9,7 +9,7 @@ import lightning as L
 import torch
 import torch.optim as optim
 import numpy as np
-
+from torch.distributions.dirichlet import Dirichlet
 class ProtoNetModule(LightningModule):
     def __init__(self,
                  net: torch.nn.Module,
@@ -24,6 +24,11 @@ class ProtoNetModule(LightningModule):
         self.N_WAY = N_WAY
         self.K_SHOT = K_SHOT
         self.train_acc = Accuracy(task="multiclass", num_classes= N_WAY)
+        self.train_fake_acc = Accuracy(task="multiclass", num_classes= N_WAY)
+        self.train_mixed_up_acc = Accuracy(task="multiclass", num_classes= N_WAY)
+        self.train_mixedup_discriminator_real_acc= Accuracy(task = "binary")
+        self.train_mixedup_discriminator_mixedup_acc= Accuracy(task = "binary")
+
         self.val_acc = Accuracy(task="multiclass", num_classes= N_WAY)
         self.test_acc = Accuracy(task="multiclass", num_classes= N_WAY)
 
@@ -42,10 +47,6 @@ class ProtoNetModule(LightningModule):
                     b.unsqueeze(0).expand(n, m, -1))**2).sum(dim=2)
         return logits
 
-
-    def accuracy(self, predictions, targets):
-        predictions = predictions.argmax(dim=1).view(targets.shape)
-        return (predictions == targets).sum().float() / targets.size(0)
     
     def fast_adapt(self, model, batch, ways, shot, mode, metric=None, device=None):
         if metric is None:
@@ -62,7 +63,8 @@ class ProtoNetModule(LightningModule):
         data = data.squeeze(0)[sort.indices].squeeze(0)
         labels = labels.squeeze(0)[sort.indices].squeeze(0)
         # Compute support and query embeddings
-        embeddings = model(data)
+        embeddings = model.forward(data)
+        embeddings = model.fault_classfier(embeddings)
         support_indices = np.zeros(data.size(0), dtype=bool)
         selection = np.arange(ways) * (shot + shot)
         for offset in range(shot):
@@ -77,15 +79,144 @@ class ProtoNetModule(LightningModule):
  
 
         return logits, labels
+    
+    def fast_fake_adapt(self, model, batch, ways, shot, mode, metric=None, device=None):
+        if metric is None:
+            metric = self.pairwise_distances_logits
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        data, labels = batch
+        data = data.to(device)
+        labels = labels.to(device)
+
+        # Sort data samples by labels
+        # TODO: Can this be replaced by ConsecutiveLabels ?
+        alpha = 0.0001 + torch.rand(1) * 0.0002
+        sort = torch.sort(labels)
+        data = data.squeeze(0)[sort.indices].squeeze(0)
+        labels = labels.squeeze(0)[sort.indices].squeeze(0)
+        # Compute support and query embeddings
+        embeddings = model.forward(data)
+        embeddings = model.fault_classfier(embeddings)
+        support_indices = np.zeros(data.size(0), dtype=bool)
+        selection = np.arange(ways) * (shot + shot)
+        for offset in range(shot):
+            support_indices[selection + offset] = True
+        query_indices = torch.from_numpy(~support_indices)
+        support_indices = torch.from_numpy(support_indices)
+        fake_data = self.net.fake_generator(data[support_indices],alpha)
+        fake_embeddings = model.forward(fake_data)
+        fake_embeddings = model.fault_classfier(fake_embeddings)
+        fake_datasupport = fake_embeddings.reshape(ways, shot, -1).mean(dim=1)
+        query = embeddings[query_indices]
+        labels = labels[query_indices].long()
+        logits = self.pairwise_distances_logits(query, fake_datasupport)
+ 
+
+        return logits, labels
+    
+    def make_mixedup(self, data, labels, alpha=0.5):
+        mixed_sample_list = []
+        label_list = []
+        for label in labels.unique():
+            # Find indices of samples with the same label
+            same_label_indices = (labels == label).nonzero(as_tuple=True)[0]
+            same_label_data = data[same_label_indices]
+            numberofdata_in_same_label = same_label_data.size(0)
+
+            if numberofdata_in_same_label > 1:
+                # Sample weights from a Dirichlet distribution
+                weights = Dirichlet(torch.tensor([alpha] * numberofdata_in_same_label)).sample()
+
+                # Initialize mixed sample
+                mixed_sample = torch.zeros_like(same_label_data[0])
+
+                # Perform the mixup
+                for i in range(numberofdata_in_same_label):
+                    mixed_sample += weights[i] * same_label_data[i]
+
+                mixed_sample_list.append(mixed_sample.unsqueeze(0))
+                label_list.append(label)
+        
+        if mixed_sample_list:
+            a = torch.cat(mixed_sample_list, dim=0)
+            b = torch.tensor(label_list)
+            return a, b
+ 
+    
+    def fast_adapt_mixedup_data(self, model, batch, ways, shot, mode, metric=None, device=None):
+        if metric is None:
+            metric = self.pairwise_distances_logits
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        data, labels = batch
+        data = data.to(device)
+        labels = labels.to(device)
+
+        # Sort data samples by labels
+        # TODO: Can this be replaced by ConsecutiveLabels ?
+        sort = torch.sort(labels)
+        data = data.squeeze(0)[sort.indices].squeeze(0)
+        labels = labels.squeeze(0)[sort.indices].squeeze(0)
+        # Compute support and query embeddings
+        embeddings = model.forward(data)
+        embeddings = model.fault_classfier(embeddings)
+        support_indices = np.zeros(data.size(0), dtype=bool)
+        selection = np.arange(ways) * (shot + shot)
+        for offset in range(shot):
+            support_indices[selection + offset] = True
+        query_indices = torch.from_numpy(~support_indices)
+        support_indices = torch.from_numpy(support_indices)
+        
+        support_data = data[support_indices]
+        support_label = labels[support_indices]
+        mixed_data, _ = self.make_mixedup(support_data,support_label)
+        mixed_imbedding = model.forward(mixed_data)
+        mixed_imbedding = model.fault_classfier(mixed_imbedding)
+        proto = mixed_imbedding.reshape(ways, 1, -1).mean(dim=1)
+        query = embeddings[query_indices]
+        labels = labels[query_indices].long()
+        logits = self.pairwise_distances_logits(query, proto)
+
+        real_data = support_data
+        real_feature = self.net.forward(real_data)
+        mixed_feature = self.net.forward(mixed_data)
+        adversarial_loss, real_acc, mixedup_acc = self.net.calculate_adversarial_loss_and_acc(real_feature, mixed_feature)
+
+        return logits, labels, adversarial_loss, real_acc, mixedup_acc
 
     def training_step(self, batch, batch_idx):
         logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
-        loss = F.cross_entropy(logits, labels)
-        self.train_loss(loss)
+        classification_loss = F.cross_entropy(logits, labels)
+
+        mixedup_logits, mixedup_labels, mixedup_adversarial_loss, mixedup_real_acc, mixedup_mixedup_acc  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        mixedup_classification_loss = F.cross_entropy(mixedup_logits, mixedup_labels)
+        fake_logit, fake_labels = self.fast_fake_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        fake_classification_loss = F.cross_entropy(fake_logit, fake_labels)
+        '''
+        anchor, positive, negative = self.net.prepare_triplet(batch)
+        # Feature 추출
+        anchor_feature = self.net.forward(anchor)
+        positive_feature = self.net.forward(positive)
+        negative_feature = self.net.forward(negative)
+        # Loss 계산
+        triplet_loss = self.net.triplet_loss(anchor_feature, positive_feature, negative_feature)
+        '''
+        # 전체 손실
+        total_loss =  classification_loss + fake_classification_loss + mixedup_classification_loss - 0.001 * mixedup_adversarial_loss
+
+        self.train_loss(total_loss)
         self.train_acc(logits, labels)
+        self.train_mixed_up_acc(mixedup_logits, mixedup_labels)
+        self.train_fake_acc(fake_logit, fake_labels)
         self.log('train/loss', self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log('train/acc', self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
-        return loss
+        self.log('train_fake/acc', self.train_fake_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('train_mixedup/acc', self.train_mixed_up_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("mixedup_discriminator_real_acc",mixedup_real_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("mixedup_discriminator_mixedup_acc,",mixedup_mixedup_acc, on_step=False, on_epoch=True, prog_bar=True)
+        return total_loss
+
     
     def on_train_epoch_end(self):
         pass
@@ -94,9 +225,11 @@ class ProtoNetModule(LightningModule):
         pass
 
     def validation_step(self, batch, batch_idx):
-        logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "val")
-        loss = F.cross_entropy(logits, labels)
-        self.val_loss(loss)
+        logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        classification_loss = F.cross_entropy(logits, labels)
+
+
+        self.val_loss(classification_loss)
         self.val_acc(logits, labels)
         self.log('val/loss', self.val_loss, on_step=False, on_epoch=True, prog_bar=False)
         self.log('val/acc', self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
@@ -107,9 +240,9 @@ class ProtoNetModule(LightningModule):
         self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True), 
         
     def test_step(self, batch, batch_idx):
-        logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "test")
-        loss = F.cross_entropy(logits, labels)
-        self.test_loss(loss)
+        logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        classification_loss = F.cross_entropy(logits, labels)
+        self.test_loss(classification_loss)
         self.test_acc(logits, labels)
         self.log('test/loss', self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log('test/acc', self.test_acc, on_step=False, on_epoch=True, prog_bar=True)

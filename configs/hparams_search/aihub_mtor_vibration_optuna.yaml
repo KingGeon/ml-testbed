@@ -60,4 +60,6 @@ hydra:
       model.net.kernel3_size: choice(16, 12, 8)
       model.net.kernel4_size: choice(8, 6, 4)
       model.net.lstm_hidden_size: choice(512, 256, 128, 64, 32)
+      
+      
 

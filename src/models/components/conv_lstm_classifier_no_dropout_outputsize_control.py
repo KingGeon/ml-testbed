@@ -9,6 +9,32 @@ class FFTReal(nn.Module):
         fft_result = fft.fft(inputs, dim = dim)
         return torch.real(fft_result)
 
+class Discriminator(nn.Module):
+    def __init__(self, input_size, dense1_out, dense2_out):
+        super(Discriminator, self).__init__()
+        self.fc1 = nn.Linear(input_size, dense1_out)
+        self.fc2 = nn.Linear(dense1_out, dense2_out)
+        self.fc3 = nn.Linear(dense2_out, 1)  # Output layer for binary classification
+
+        self.silu = nn.SiLU(0.2)
+        self.dropout = nn.Dropout(0.3)
+
+    def forward(self, x):
+        x = self.silu(self.fc1(x))
+        x = self.silu(self.fc2(x))
+        x = torch.sigmoid(self.fc3(x))  # Sigmoid for binary classification
+        return x
+    
+class TripletLoss(nn.Module):
+    def __init__(self, margin=2):
+        super(TripletLoss, self).__init__()
+        self.margin = margin
+        self.triplet_loss = nn.TripletMarginLoss(margin=self.margin, p=2)
+
+    def forward(self, anchor, positive, negative):
+        return self.triplet_loss(anchor, positive, negative)
+    
+
 class Health_State_Analysis(nn.Module):
     def __init__(self, length_of_signal=8192):
         super(Health_State_Analysis, self).__init__()
@@ -85,7 +111,6 @@ class Health_State_Analysis(nn.Module):
         velocity_integral = torch.cumsum(data, dim=1) * time_diff
         # 가속도의 절댓값의 합을 velocity_change 특성으로 사용
         velocity_feature = torch.sum(torch.abs(velocity_integral), dim=1)/self.length_of_signal
-
         return velocity_feature
 
     def calculate_displacement(self, data):
@@ -159,8 +184,9 @@ class FFT_Health_State_Analysis(nn.Module):
     def __init__(self, topk):
         super(FFT_Health_State_Analysis, self).__init__()
         self.topk = topk
+
     def forward(self, inputs):
-        
+        inputs = inputs[:8192//2]
         top3_mean_freq = torch.mean(torch.topk(inputs, k=3, axis = 1).indices.float(),axis = 1)  
         top3_rms = torch.sqrt(torch.mean(torch.topk(inputs, k=3, axis = 1).values**2, dim=1))
         max_freq = torch.Tensor(torch.topk(inputs, k=1, axis = 1).indices.float()).squeeze(-1) 
@@ -191,8 +217,6 @@ class EngineOrderFFT(nn.Module):
         return torch.abs(stacked_eofft)
 
     def forward(self, inputs, rpm):
-        # inputs shape: (batch, signal_length, channel_size)
-        # rpm shape: (batch,)
         return self.engine_order_fft(inputs, rpm)
 
 class RpmEstimator(nn.Module):
@@ -233,6 +257,7 @@ class RpmEstimator(nn.Module):
     
     def forward(self, signal):
         return self.estimate_rpm(signal)
+    
 class MixStyle(nn.Module):
     def __init__(self):
         super(MixStyle, self).__init__()
@@ -269,20 +294,24 @@ class CONV_LSTM_Classifier(nn.Module):
         kernel3_size = 16,
         kernel4_size = 4,
         lstm_hidden_size : int = 64,
-        dense1_out_size : int = 64,
-        dense2_out_size : int = 32,
-        use_raw_bandpass_filterd: bool = True,
-        use_fft_bandpass_filterd: bool = True,
+        dense1_out_size : int = 128,
+        dense2_out_size : int = 64,
+        use_raw: bool = False,
+        use_bandpass: bool = True,
+        use_bandpass_fft: bool = True,
+        use_envelope_spectrum: bool = True,
+        use_envelope: bool = True,
         use_eofft: bool = True,
         use_fft_stat: bool = True,
         use_stat: bool = True,
-        topk_freq: int = 20
+        topk_freq: int = 20,
+        discriminator_dense1_outsize = 128,
+        discriminator_dense2_outsize = 32,
     ):
         super(CONV_LSTM_Classifier, self).__init__()
-        self.in_channels = 2 + int(use_raw_bandpass_filterd) + int(use_fft_bandpass_filterd)
         self.output_size = output_size
         self.mix_style = MixStyle()
-        self.dropout  = nn.Dropout(0.5)
+        self.dropout  = nn.Dropout(0.3)
         self.in_length = in_length
         self.fft_real = FFTReal()
         self.fft_hs = FFT_Health_State_Analysis(topk = topk_freq)
@@ -291,10 +320,16 @@ class CONV_LSTM_Classifier(nn.Module):
         self.layer_norm2 = nn.LayerNorm(dense2_out_size)
         self.silu = nn.SiLU()
         self.maxpool = nn.MaxPool1d(kernel_size=2)
-        self.use_raw_bandpass_filterd = use_raw_bandpass_filterd
-        self.use_fft_bandpass_filterd = use_fft_bandpass_filterd
+        self.use_eofft = use_eofft
+        self.use_envelope = use_envelope
+        self.use_envelope_spectrum = use_envelope_spectrum
         self.use_fft_stat = use_fft_stat
         self.use_stat = use_stat
+        self.use_raw = use_raw
+        self.use_bandpass = use_bandpass
+        self.use_bandpass_fft = use_bandpass_fft
+
+        self.in_channels =  1 + 9 * int(use_bandpass_fft) +  9 * int(use_bandpass) + 1 * int(use_raw) + int(use_envelope) + int(use_envelope_spectrum)
         # Convolutional layers
         self.conv1 = nn.Conv1d(in_channels=self.in_channels, out_channels=out_channel1_size, kernel_size=kernel1_size, stride=4, padding=1)
         self.batchnorm1 = nn.BatchNorm1d(out_channel1_size)
@@ -309,52 +344,297 @@ class CONV_LSTM_Classifier(nn.Module):
         # LSTM layer
         self.lstm = nn.LSTM(input_size=self.conv4_out, hidden_size=lstm_hidden_size, batch_first=True, bidirectional=True)
         # Since LSTM is bidirectional, we concatenate the outputs, hence the hidden size is doubled
-        self.dense1 = nn.Linear(lstm_hidden_size * 2 + 16 * int(self.use_stat) +(topk_freq + 4) * int(self.use_fft_stat), dense1_out_size)  # Hidden size is doubled because LSTM is bidirectional
+        self.dense1 = nn.Linear(lstm_hidden_size * 2 + 16 * int(self.use_stat) + 2 * (topk_freq + 4) * int(self.use_fft_stat), dense1_out_size)  # Hidden size is doubled because LSTM is bidirectional
         # Dense layers
         self.dense2 = nn.Linear(dense1_out_size, dense2_out_size)
         self.dense3 = nn.Linear(dense2_out_size, output_size)
-        if use_eofft:
-            if use_raw_bandpass_filterd:
-                if use_fft_bandpass_filterd:
-                    self.forward = self._forward_with_both_filters_eofft
-                else:
-                    self.forward = self._forward_with_raw_filter_only_eofft
-            else:
-                if use_fft_bandpass_filterd:
-                    self.forward = self._forward_with_raw_fft_filters_eofft
-                else:
-                    self.forward = self._forward_without_filters_eofft
-        else:
-            if use_raw_bandpass_filterd:
-                if use_fft_bandpass_filterd:
-                    self.forward = self._forward_with_both_filters_fft
-                else:
-                    self.forward = self._forward_with_raw_filter_only_fft
-            else:
-                if use_fft_bandpass_filterd:
-                    self.forward = self._forward_with_raw_fft_filters_fft
-                else:
-                    self.forward = self._forward_without_filters_fft
-            
 
+        self.triplet_loss = TripletLoss()
+        self.discriminator = Discriminator(dense1_out_size,discriminator_dense1_outsize,discriminator_dense2_outsize)
+              
+    def fault_classfier(self,z):
+        
+        z = self.dense3(self.dense2(z))
+        return z
+    
+    def prepare_triplet(self, batch):
+    # batch_data: 입력 데이터, labels: 데이터 레이블
+        batch_data, labels = batch
+        batch_data = batch_data.squeeze(0)
+        labels = labels.squeeze(0)
+        n = batch_data.size(0)  # 배치 크기
 
+        # Triplet 샘플을 저장할 리스트 초기화
+        anchors = []
+        positives = []
+        negatives = []
+
+        for i in range(n):
+            anchor = batch_data[i]
+            anchor_label = labels[i]
+
+            # Positive 샘플 선택 (동일 클래스)
+            positive_indices = (labels == anchor_label).nonzero(as_tuple=True)[0]
+            positive_index = positive_indices[torch.randint(len(positive_indices), (1,))].item()
+            positive = batch_data[positive_index]
+
+            # Negative 샘플 선택 (다른 클래스)
+            negative_indices = (labels != anchor_label).nonzero(as_tuple=True)[0]
+            negative_index = negative_indices[torch.randint(len(negative_indices), (1,))].item()
+            negative = batch_data[negative_index]
+
+            anchors.append(anchor.unsqueeze(0))
+            positives.append(positive.unsqueeze(0))
+            negatives.append(negative.unsqueeze(0))
+
+        # 배치 형태로 변환
+        anchors = torch.cat(anchors, dim=0)
+        positives = torch.cat(positives, dim=0)
+        negatives = torch.cat(negatives, dim=0)
+
+        return anchors, positives, negatives
+    def fake_generator(self, x, alpha):
+        # 원본 데이터 x에 잡음 추가 및 스케일 조정
+        alpha = alpha.to(x.device)
+        noise = torch.randn_like(x) * alpha  # 배치 데이터에 대한 잡음 추가
+
+        # 0.95에서 1.05 사이의 랜덤한 상수 c 생성
+        beta = 0.8 + torch.rand(1).to(x.device) * 0.4
+        scaled_x = x * beta + torch.abs(noise)   # x에 c를 곱하고 랜덤한 노이즈를 추가
+        return scaled_x
+    
+    def calculate_adversarial_loss_and_acc(self, real_data, fake_data):
+        # Adversarial Loss calculation
+        real_output = self.discriminator(real_data)
+        fake_output = self.discriminator(fake_data)
+
+        adversarial_loss = F.binary_cross_entropy(real_output, torch.ones_like(real_output)) + \
+                        F.binary_cross_entropy(fake_output, torch.zeros_like(fake_output))
+
+        threshold = 0.5
+        # Since outputs are probabilities, directly compare with the threshold
+        real_predictions = (real_output > threshold).float()
+        fake_predictions = (fake_output > threshold).float()
+
+        # Calculate accuracies
+        real_accuracy = torch.mean((real_predictions == 1).float())
+        fake_accuracy = torch.mean((fake_predictions == 0).float())
+
+        return adversarial_loss, real_accuracy, fake_accuracy
+
+    
     def calculate_conv_output_size(self):
         # Dummy input for calculating the size of LSTM input
         # This assumes the input size to the first conv layer is (batch_size, channels, sequence_length)
         dummy_input = torch.zeros(1, self.in_channels, self.in_length)
         dummy_output = self.maxpool(self.batchnorm4(self.conv4(self.silu(self.batchnorm3(self.conv3(self.silu(self.maxpool(self.batchnorm2(self.conv2(self.silu(self.batchnorm1(self.conv1(dummy_input)))))))))))))
         return dummy_output.shape[-1]
+    
+    def forward(self, x):
+        eofft = x[:,:,-1].unsqueeze(-1)
+        envelope_spectrum = x[:,:,-2].unsqueeze(-1)
+        envelope = x[:,:,-3].unsqueeze(-1)
+        
+        y = x[:,:,1:-3]
+        x = x[:,:,0].unsqueeze(-1)
+        fft = self.fft_real(x, 1)
+        fft_bandpassed =self.fft_real(y, 1)
+        if self.use_bandpass_fft:
+            if self.use_bandpass:
+                if self.use_raw:
+                    if self.use_envelope :
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, y, eofft, fft_bandpassed, envelope, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, y, fft, fft_bandpassed, envelope, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, y, eofft, fft_bandpassed, envelope), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, y, fft, fft_bandpassed, envelope), dim=2)
+                    else:
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, y, eofft,fft_bandpassed, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, y, fft,fft_bandpassed, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, y, eofft, fft_bandpassed), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, y, fft, fft_bandpassed), dim=2)
+                else:
+                    if self.use_envelope :
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((y, eofft,fft_bandpassed, envelope, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((y, fft,fft_bandpassed, envelope, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((y, eofft,fft_bandpassed, envelope), dim=2)
+                            else:
+                                dynamic_features = torch.cat((y, fft,fft_bandpassed, envelope), dim=2)
+                    else:
+                        if self.use_envelope_spectrum:
+                                        if self.use_eofft:
+                                            dynamic_features = torch.cat((y, eofft,fft_bandpassed, envelope_spectrum), dim=2)
+                                        else:
+                                            dynamic_features = torch.cat((y, fft,fft_bandpassed, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((y, eofft,fft_bandpassed), dim=2)
+                            else:
+                                dynamic_features = torch.cat((y, fft,fft_bandpassed), dim=2)
+            else:
+                if self.use_raw:
+                    if self.use_envelope :
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, eofft,fft_bandpassed, envelope, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, fft,fft_bandpassed, envelope, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, eofft,fft_bandpassed, envelope), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, fft,fft_bandpassed, envelope), dim=2)
+                    else:
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, eofft,fft_bandpassed, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, fft,fft_bandpassed, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, eofft,fft_bandpassed), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, fft,fft_bandpassed), dim=2)
 
-    def _forward_with_both_filters_eofft(self, x):
-        # FFT and Real components
-        eofft = x[:,:,2].unsqueeze(-1)
-        y = x[:,:,1].unsqueeze(-1)
-        x = x[:,:,0].unsqueeze(-1)
-        r_filtered = self.fft_real(y, 1)
-        dynamic_features = torch.cat((eofft,r_filtered, x, y), dim=2)
+                else:
+                    if self.use_envelope :
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((eofft,fft_bandpassed, envelope, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((fft,fft_bandpassed, envelope, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((eofft,fft_bandpassed, envelope), dim=2)
+                            else:
+                                dynamic_features = torch.cat((fft,fft_bandpassed, envelope), dim=2)
+                    else:
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((eofft,fft_bandpassed, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((fft,fft_bandpassed, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((eofft,fft_bandpassed), dim=2)
+                            else:
+                                dynamic_features = torch.cat((fft,fft_bandpassed), dim=2)
+
+        else:
+            if self.use_bandpass:
+                if self.use_raw:
+                    if self.use_envelope :
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, y, eofft, envelope, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, y, fft, envelope, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, y, eofft, envelope), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, y, fft, envelope), dim=2)
+                    else:
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, y, eofft, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, y, fft, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, y, eofft), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, y, fft), dim=2)
+                else:
+                    if self.use_envelope :
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((y, eofft, envelope, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((y, fft, envelope, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((y, eofft, envelope), dim=2)
+                            else:
+                                dynamic_features = torch.cat((y, fft, envelope), dim=2)
+                    else:
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((y, eofft, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((y, fft, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((y, eofft), dim=2)
+                            else:
+                                dynamic_features = torch.cat((y, fft), dim=2)
+            else:
+                if self.use_raw:
+                    if self.use_envelope :
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, eofft, envelope, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, fft, envelope, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, eofft, envelope), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, fft, envelope), dim=2)
+                    else:
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, eofft , envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, fft, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((x, eofft), dim=2)
+                            else:
+                                dynamic_features = torch.cat((x, fft), dim=2)
+                else:
+                    if self.use_envelope :
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((eofft, envelope, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((fft, envelope, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((eofft, envelope), dim=2)
+                            else:
+                                dynamic_features = torch.cat((fft, envelope), dim=2)
+
+                    else:
+                        if self.use_envelope_spectrum:
+                            if self.use_eofft:
+                                dynamic_features = torch.cat((eofft, envelope_spectrum), dim=2)
+                            else:
+                                dynamic_features = torch.cat((fft, envelope_spectrum), dim=2)
+                        else:
+                            if self.use_eofft:
+                                dynamic_features = eofft
+                            else:
+                                dynamic_features = fft
+
+
         dynamic_features = dynamic_features.transpose(1,2)
-        #dynamic_features = self.mix_style(dynamic_features)
-        # Apply layers
         z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
         z = self.silu(self.batchnorm2(self.conv2(z)))
         z = self.maxpool(z)
@@ -364,214 +644,17 @@ class CONV_LSTM_Classifier(nn.Module):
         z, _ = self.lstm(z)
         z = z[:, -1, :]  # Take the last time step
         if self.use_fft_stat:
-            fft_hs = self.fft_hs(eofft)
-            z = torch.cat((z,fft_hs), dim=-1) 
+            if self.use_eofft:
+                eofft_hs = self.fft_hs(eofft)
+                fft_hs = self.fft_hs(fft)
+            z = torch.cat((z, fft_hs, eofft_hs), dim=-1) 
         if self.use_stat:
             hs = self.hs(x)
             z = torch.cat((z,hs), dim=-1) 
-        
         z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.dense2(z))
-        return z
-    
-    def _forward_with_both_filters_fft(self, x):
-        # FFT and Real components
-        eofft = x[:,:,2].unsqueeze(-1)
-        y = x[:,:,1].unsqueeze(-1)
-        x = x[:,:,0].unsqueeze(-1)
-        fft = self.fft_real(x, 1)
-        r_filtered = self.fft_real(y, 1)
-        dynamic_features = torch.cat((fft, r_filtered, x, y), dim=2)
-        dynamic_features = dynamic_features.transpose(1,2)
-        #dynamic_features = self.mix_style(dynamic_features)
-        # Apply layers
-        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
-        z = self.silu(self.batchnorm2(self.conv2(z)))
-        z = self.maxpool(z)
-        z = self.silu(self.batchnorm3(self.conv3(z)))
-        z = self.silu(self.batchnorm4(self.conv4(z)))
-        z = self.maxpool(z)
-        z, _ = self.lstm(z)
-        z = z[:, -1, :]  # Take the last time step
-        if self.use_fft_stat:
-            fft_hs = self.fft_hs(eofft)
-            z = torch.cat((z,fft_hs), dim=-1) 
-        if self.use_stat:
-            hs = self.hs(x)
-            z = torch.cat((z,hs), dim=-1) 
-        
-        z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.layer_norm2(self.dense2(z)))
+
         return z
 
-    def _forward_with_raw_filter_only_eofft(self, x):
-        # FFT and Real components
-        eofft = x[:,:,2].unsqueeze(-1)
-        y = x[:,:,1].unsqueeze(-1)
-        x = x[:,:,0].unsqueeze(-1)
-        dynamic_features = torch.cat((eofft, x, y), dim=2)
-        dynamic_features = dynamic_features.transpose(1,2)
-        #dynamic_features = self.mix_style(dynamic_features)
-        # Apply layers
-        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
-        z = self.silu(self.batchnorm2(self.conv2(z)))
-        z = self.maxpool(z)
-        z = self.silu(self.batchnorm3(self.conv3(z)))
-        z = self.silu(self.batchnorm4(self.conv4(z)))
-        z = self.maxpool(z)
-        z, _ = self.lstm(z)
-        z = z[:, -1, :]  # Take the last time step
-        if self.use_fft_stat:
-            fft_hs = self.fft_hs(eofft)
-            z = torch.cat((z,fft_hs), dim=-1) 
-        if self.use_stat:
-            hs = self.hs(x)
-            z = torch.cat((z,hs), dim=-1) 
-        
-        z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.layer_norm2(self.dense2(z)))
-        return z
-    
-    def _forward_with_raw_filter_only_fft(self, x):
-        # FFT and Real components
-        eofft = x[:,:,2].unsqueeze(-1)
-        y = x[:,:,1].unsqueeze(-1)
-        x = x[:,:,0].unsqueeze(-1)
-        fft = self.fft_real(x, 1)
-        dynamic_features = torch.cat((fft, x, y), dim=2)
-        dynamic_features = dynamic_features.transpose(1,2)
-        #dynamic_features = self.mix_style(dynamic_features)
-        # Apply layers
-        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
-        z = self.silu(self.batchnorm2(self.conv2(z)))
-        z = self.maxpool(z)
-        z = self.silu(self.batchnorm3(self.conv3(z)))
-        z = self.silu(self.batchnorm4(self.conv4(z)))
-        z = self.maxpool(z)
-        z, _ = self.lstm(z)
-        z = z[:, -1, :]  # Take the last time step
-        if self.use_fft_stat:
-            fft_hs = self.fft_hs(eofft)
-            z = torch.cat((z,fft_hs), dim=-1) 
-        if self.use_stat:
-            hs = self.hs(x)
-            z = torch.cat((z,hs), dim=-1) 
-        
-        z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.layer_norm2(self.dense2(z)))
-        return z
-    
-    def _forward_with_raw_fft_filters_eofft(self, x):
-        eofft = x[:,:,2].unsqueeze(-1)
-        y = x[:,:,1].unsqueeze(-1)
-        x = x[:,:,0].unsqueeze(-1)
-        r_filtered = self.fft_real(y, 1)
-        dynamic_features = torch.cat((eofft,r_filtered, x), dim=2)
-        dynamic_features = dynamic_features.transpose(1,2)
-        #dynamic_features = self.mix_style(dynamic_features)
-        # Apply layers
-        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
-        z = self.silu(self.batchnorm2(self.conv2(z)))
-        z = self.maxpool(z)
-        z = self.silu(self.batchnorm3(self.conv3(z)))
-        z = self.silu(self.batchnorm4(self.conv4(z)))
-        z = self.maxpool(z)
-        z, _ = self.lstm(z)
-        z = z[:, -1, :]  # Take the last time step
-        if self.use_fft_stat:
-            fft_hs = self.fft_hs(eofft)
-            z = torch.cat((z,fft_hs), dim=-1) 
-        if self.use_stat:
-            hs = self.hs(x)
-            z = torch.cat((z,hs), dim=-1) 
-        
-        z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.layer_norm2(self.dense2(z)))
-        return z
-    
-    def _forward_with_raw_fft_filters_fft(self, x):
-        eofft = x[:,:,2].unsqueeze(-1)
-        y = x[:,:,1].unsqueeze(-1)
-        x = x[:,:,0].unsqueeze(-1)
-        fft = self.fft_real(x, 1)
-        r_filtered = self.fft_real(y, 1)
-        dynamic_features = torch.cat((fft,r_filtered, x), dim=2)
-        dynamic_features = dynamic_features.transpose(1,2)
-        #dynamic_features = self.mix_style(dynamic_features)
-        # Apply layers
-        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
-        z = self.silu(self.batchnorm2(self.conv2(z)))
-        z = self.maxpool(z)
-        z = self.silu(self.batchnorm3(self.conv3(z)))
-        z = self.silu(self.batchnorm4(self.conv4(z)))
-        z = self.maxpool(z)
-        z, _ = self.lstm(z)
-        z = z[:, -1, :]  # Take the last time step
-        if self.use_fft_stat:
-            fft_hs = self.fft_hs(eofft)
-            z = torch.cat((z,fft_hs), dim=-1) 
-        if self.use_stat:
-            hs = self.hs(x)
-            z = torch.cat((z,hs), dim=-1) 
-        
-        z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.layer_norm2(self.dense2(z)))
-        return z
-    
-    def _forward_without_filters_eofft(self, x):
-        # FFT and Real components
-        eofft = x[:,:,2].unsqueeze(-1)
-        x = x[:,:,0].unsqueeze(-1)
-        dynamic_features = torch.cat((eofft, x), dim=2)
-        dynamic_features = dynamic_features.transpose(1,2)
-        #dynamic_features = self.mix_style(dynamic_features)
-        # Apply layers
-        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
-        z = self.silu(self.batchnorm2(self.conv2(z)))
-        z = self.maxpool(z)
-        z = self.silu(self.batchnorm3(self.conv3(z)))
-        z = self.silu(self.batchnorm4(self.conv4(z)))
-        z = self.maxpool(z)
-        z, _ = self.lstm(z)
-        z = z[:, -1, :]  # Take the last time step
-        if self.use_fft_stat:
-            fft_hs = self.fft_hs(eofft)
-            z = torch.cat((z,fft_hs), dim=-1) 
-        if self.use_stat:
-            hs = self.hs(x)
-            z = torch.cat((z,hs), dim=-1) 
-        
-        z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.layer_norm2(self.dense2(z)))
-        return z
-    
-    def _forward_without_filters_fft(self, x):
-        # FFT and Real components
-        eofft = x[:,:,2].unsqueeze(-1)
-        x = x[:,:,0].unsqueeze(-1)
-        fft = self.fft_real(x, 1)
-        dynamic_features = torch.cat((fft, x), dim=2)
-        dynamic_features = dynamic_features.transpose(1,2)
-        #dynamic_features = self.mix_style(dynamic_features)
-
-        # Apply layers
-        z = self.silu(self.batchnorm1(self.conv1(dynamic_features)))
-        z = self.silu(self.batchnorm2(self.conv2(z)))
-        z = self.maxpool(z)
-        z = self.silu(self.batchnorm3(self.conv3(z)))
-        z = self.silu(self.batchnorm4(self.conv4(z)))
-        z = self.maxpool(z)
-        z, _ = self.lstm(z)
-        z = z[:, -1, :]  # Take the last time step
-        if self.use_fft_stat:
-            fft_hs = self.fft_hs(eofft)
-            z = torch.cat((z,fft_hs), dim=-1) 
-        if self.use_stat:
-            hs = self.hs(x)
-            z = torch.cat((z,hs), dim=-1) 
-        z = self.layer_norm1(self.dense1(z))
-        z = self.dense3(self.layer_norm2(self.dense2(z)))
-        return z
 
     def predict(self, x):
         self.eval()

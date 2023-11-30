@@ -4,7 +4,7 @@ optimizer:
   _target_: torch.optim.AdamW
   _partial_: true
   lr: 0.001
-  weight_decay: 0.0
+  weight_decay: 0
 
 scheduler:
   _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
@@ -15,10 +15,13 @@ scheduler:
 
 net:
   _target_: src.models.components.conv_lstm_classifier_no_dropout_outputsize_control.CONV_LSTM_Classifier
-  use_raw_bandpass_filterd : True
-  use_fft_bandpass_filterd : True
+  use_raw : False
+  use_bandpass : False
+  use_bandpass_fft : False
+  use_envelope : True
+  use_envelope_spectrum : True
   use_eofft : True
-  use_fft_stat : True
+  use_fft_stat : False
   topk_freq : 10
   use_stat : True
   out_channel1_size : 16
@@ -32,4 +35,6 @@ net:
   lstm_hidden_size : 128
   dense1_out_size : 128
   dense2_out_size : 64
+  discriminator_dense1_outsize : 128
+  discriminator_dense2_outsize : 32
   output_size: 5
