@@ -399,7 +399,7 @@ class CONV_LSTM_Classifier(nn.Module):
         noise = torch.randn_like(x) * alpha  # 배치 데이터에 대한 잡음 추가
 
         # 0.95에서 1.05 사이의 랜덤한 상수 c 생성
-        beta = 0.8 + torch.rand(1).to(x.device) * 0.4
+        beta = 0.6 + torch.rand(1).to(x.device) * 0.8
         scaled_x = x * beta + torch.abs(noise)   # x에 c를 곱하고 랜덤한 노이즈를 추가
         return scaled_x
     

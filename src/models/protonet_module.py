@@ -178,43 +178,37 @@ class ProtoNetModule(LightningModule):
         labels = labels[query_indices].long()
         logits = self.pairwise_distances_logits(query, proto)
 
-        real_data = support_data
-        real_feature = self.net.forward(real_data)
-        mixed_feature = self.net.forward(mixed_data)
-        adversarial_loss, real_acc, mixedup_acc = self.net.calculate_adversarial_loss_and_acc(real_feature, mixed_feature)
 
-        return logits, labels, adversarial_loss, real_acc, mixedup_acc
+        return logits, labels
 
     def training_step(self, batch, batch_idx):
         logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
         classification_loss = F.cross_entropy(logits, labels)
 
-        mixedup_logits, mixedup_labels, mixedup_adversarial_loss, mixedup_real_acc, mixedup_mixedup_acc  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
-        mixedup_classification_loss = F.cross_entropy(mixedup_logits, mixedup_labels)
-        fake_logit, fake_labels = self.fast_fake_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
-        fake_classification_loss = F.cross_entropy(fake_logit, fake_labels)
+        #mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        #mixedup_classification_loss = F.cross_entropy(mixedup_logits, mixedup_labels)
+        #fake_logit, fake_labels = self.fast_fake_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        #fake_classification_loss = F.cross_entropy(fake_logit, fake_labels)
         '''
         anchor, positive, negative = self.net.prepare_triplet(batch)
         # Feature 추출
         anchor_feature = self.net.forward(anchor)
-        positive_feature = self.net.forward(positive)
+        positive_feature = self.net.forward(positive)    
         negative_feature = self.net.forward(negative)
         # Loss 계산
         triplet_loss = self.net.triplet_loss(anchor_feature, positive_feature, negative_feature)
         '''
         # 전체 손실
-        total_loss =  classification_loss + fake_classification_loss + mixedup_classification_loss - 0.001 * mixedup_adversarial_loss
+        total_loss =  classification_loss #+ fake_classification_loss + mixedup_classification_loss 
 
         self.train_loss(total_loss)
         self.train_acc(logits, labels)
-        self.train_mixed_up_acc(mixedup_logits, mixedup_labels)
-        self.train_fake_acc(fake_logit, fake_labels)
+        #self.train_mixed_up_acc(mixedup_logits, mixedup_labels)
+        #self.train_fake_acc(fake_logit, fake_labels)
         self.log('train/loss', self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log('train/acc', self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log('train_fake/acc', self.train_fake_acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log('train_mixedup/acc', self.train_mixed_up_acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("mixedup_discriminator_real_acc",mixedup_real_acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("mixedup_discriminator_mixedup_acc,",mixedup_mixedup_acc, on_step=False, on_epoch=True, prog_bar=True)
+        #self.log('train_fake/acc', self.train_fake_acc, on_step=False, on_epoch=True, prog_bar=True)
+        #self.log('train_mixedup/acc', self.train_mixed_up_acc, on_step=False, on_epoch=True, prog_bar=True)
         return total_loss
 
     
