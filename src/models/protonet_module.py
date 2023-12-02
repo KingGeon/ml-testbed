@@ -185,10 +185,10 @@ class ProtoNetModule(LightningModule):
         logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
         classification_loss = F.cross_entropy(logits, labels)
 
-        #mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
-        #mixedup_classification_loss = F.cross_entropy(mixedup_logits, mixedup_labels)
-        #fake_logit, fake_labels = self.fast_fake_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
-        #fake_classification_loss = F.cross_entropy(fake_logit, fake_labels)
+        mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        mixedup_classification_loss = F.cross_entropy(mixedup_logits, mixedup_labels)
+        fake_logit, fake_labels = self.fast_fake_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        fake_classification_loss = F.cross_entropy(fake_logit, fake_labels)
         '''
         anchor, positive, negative = self.net.prepare_triplet(batch)
         # Feature 추출
@@ -199,16 +199,16 @@ class ProtoNetModule(LightningModule):
         triplet_loss = self.net.triplet_loss(anchor_feature, positive_feature, negative_feature)
         '''
         # 전체 손실
-        total_loss =  classification_loss #+ fake_classification_loss + mixedup_classification_loss 
+        total_loss =  classification_loss + 0.5 * fake_classification_loss + 0.5 * mixedup_classification_loss 
 
         self.train_loss(total_loss)
         self.train_acc(logits, labels)
-        #self.train_mixed_up_acc(mixedup_logits, mixedup_labels)
-        #self.train_fake_acc(fake_logit, fake_labels)
+        self.train_mixed_up_acc(mixedup_logits, mixedup_labels)
+        self.train_fake_acc(fake_logit, fake_labels)
         self.log('train/loss', self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log('train/acc', self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
-        #self.log('train_fake/acc', self.train_fake_acc, on_step=False, on_epoch=True, prog_bar=True)
-        #self.log('train_mixedup/acc', self.train_mixed_up_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('train_fake/acc', self.train_fake_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('train_mixedup/acc', self.train_mixed_up_acc, on_step=False, on_epoch=True, prog_bar=True)
         return total_loss
 
     
