@@ -33,6 +33,7 @@ hydra:
     direction: maximize
 
     # total number of runs that will be executed
+    
     n_trials: 50
 
     # choose Optuna hyperparameter sampler

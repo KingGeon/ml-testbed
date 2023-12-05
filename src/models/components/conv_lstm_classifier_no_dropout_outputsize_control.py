@@ -289,10 +289,14 @@ class CONV_LSTM_Classifier(nn.Module):
         out_channel2_size = 64,
         out_channel3_size = 16,
         out_channel4_size = 8,
+        out_channel5_size = 4,
+        out_channel6_size = 1,
         kernel1_size = 64,
         kernel2_size = 32,
         kernel3_size = 16,
         kernel4_size = 4,
+        kernel5_size = 2,
+        kernel6_size = 2,
         lstm_hidden_size : int = 64,
         dense1_out_size : int = 128,
         dense2_out_size : int = 64,
@@ -339,12 +343,17 @@ class CONV_LSTM_Classifier(nn.Module):
         self.batchnorm3 = nn.BatchNorm1d(out_channel3_size)
         self.conv4 = nn.Conv1d(in_channels=out_channel3_size, out_channels=out_channel4_size, kernel_size=kernel4_size, stride=1, padding=1)
         self.batchnorm4 = nn.BatchNorm1d(out_channel4_size)
+        self.conv5 = nn.Conv1d(in_channels=out_channel4_size, out_channels=out_channel5_size, kernel_size=kernel5_size, stride=1, padding=1)
+        self.batchnorm5 = nn.BatchNorm1d(out_channel5_size)
+        self.conv6 = nn.Conv1d(in_channels=out_channel5_size, out_channels=out_channel6_size, kernel_size=kernel6_size, stride=1, padding=1)
+        self.batchnorm6 = nn.BatchNorm1d(out_channel6_size)
         # Calculate the output size after convolutions
-        self.conv4_out = self.calculate_conv_output_size()
+        self.conv6_out = self.calculate_conv_output_size()
+        print(self.conv6_out)
         # LSTM layer
-        self.lstm = nn.LSTM(input_size=self.conv4_out, hidden_size=lstm_hidden_size, batch_first=True, bidirectional=True)
+        self.lstm = nn.LSTM(input_size=self.conv6_out, hidden_size=lstm_hidden_size, batch_first=True, bidirectional=False)
         # Since LSTM is bidirectional, we concatenate the outputs, hence the hidden size is doubled
-        self.dense1 = nn.Linear(lstm_hidden_size * 2 + 16 * int(self.use_stat) + 2 * (topk_freq + 4) * int(self.use_fft_stat), dense1_out_size)  # Hidden size is doubled because LSTM is bidirectional
+        self.dense1 = nn.Linear(lstm_hidden_size  + 16 * int(self.use_stat) + 1 * (topk_freq + 4) * int(self.use_fft_stat), dense1_out_size)  # Hidden size is doubled because LSTM is bidirectional
         # Dense layers
         self.dense2 = nn.Linear(dense1_out_size, dense2_out_size)
         self.dense3 = nn.Linear(dense2_out_size, output_size)
@@ -427,7 +436,7 @@ class CONV_LSTM_Classifier(nn.Module):
         # Dummy input for calculating the size of LSTM input
         # This assumes the input size to the first conv layer is (batch_size, channels, sequence_length)
         dummy_input = torch.zeros(1, self.in_channels, self.in_length)
-        dummy_output = self.maxpool(self.batchnorm4(self.conv4(self.silu(self.batchnorm3(self.conv3(self.silu(self.maxpool(self.batchnorm2(self.conv2(self.silu(self.batchnorm1(self.conv1(dummy_input)))))))))))))
+        dummy_output = self.batchnorm6(self.conv6((self.batchnorm5(self.conv5(self.maxpool(self.batchnorm4(self.conv4(self.silu(self.batchnorm3(self.conv3(self.silu(self.maxpool(self.batchnorm2(self.conv2(self.silu(self.batchnorm1(self.conv1(dummy_input))))))))))))))))))
         return dummy_output.shape[-1]
     
     def forward(self, x):
@@ -641,13 +650,16 @@ class CONV_LSTM_Classifier(nn.Module):
         z = self.silu(self.batchnorm3(self.conv3(z)))
         z = self.silu(self.batchnorm4(self.conv4(z)))
         z = self.maxpool(z)
+        z = self.silu(self.batchnorm5(self.conv5(z)))
+        z = self.silu(self.batchnorm6(self.conv6(z)))
         z, _ = self.lstm(z)
         z = z[:, -1, :]  # Take the last time step
         if self.use_fft_stat:
             if self.use_eofft:
-                eofft_hs = self.fft_hs(eofft)
+                fft_hs = self.fft_hs(eofft)
+            else:
                 fft_hs = self.fft_hs(fft)
-            z = torch.cat((z, fft_hs, eofft_hs), dim=-1) 
+            z = torch.cat((z, fft_hs), dim=-1) 
         if self.use_stat:
             hs = self.hs(x)
             z = torch.cat((z,hs), dim=-1) 

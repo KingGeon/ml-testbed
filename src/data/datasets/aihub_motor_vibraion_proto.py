@@ -92,7 +92,7 @@ def min_max_scaling(data, new_min=-1, new_max=1):
 def standard_scaling(data):
     mean = np.mean(data,axis = 0 )
     std = np.std(data,axis = 0 )
-    scaled_data = (data - mean) / std
+    scaled_data = (data - mean) / (std + 1e-8)
     return scaled_data
 
 class CustomDatasetWithBandpass(Dataset):
@@ -121,8 +121,8 @@ class CustomDatasetWithBandpass(Dataset):
 class Motor_Vibration():
     def __init__(
         self,
-        test_motor_power: List[str] = ["2.2kW"],
-        val_motor_power: List[str] = ["7.5kW","22kW","30kW"],
+        test_motor_power: List[str] = ["11kW"],
+        val_motor_power: List[str] = ["11kW"],
         sampling_frequency_before_upsample: int = 4000,
         sampling_frequency_after_upsample: int = 8192,
         fault_type_dict = {"정상": 0,
@@ -228,7 +228,7 @@ class Motor_Vibration():
 
     def process_csv(self, csv_path, fault):
         data = np.loadtxt(csv_path, delimiter=',', skiprows=9, usecols=(1,), max_rows=4000)
-        #data = min_max_scaling(data)
+        data = standard_scaling(data*100)
         data = Motor_Vibration.up_sample(data, self.sampling_frequency_before_upsample, self.sampling_frequency_after_upsample, self.upsample_method)
         rpm = estimate_rpm(data)
         bandpassed_signal = sampling_with_bandpass(data, self.sampling_frequency_after_upsample, rpm/60)
@@ -263,7 +263,7 @@ class Motor_Vibration():
                     data_list.append(data)
                     target_list.append(target)
                     '''
-              
+                    
                     numpy_array = np.load(os.path.join(motor_path, 'numpy_array_' + str(cnt)+ '.npy'))
                     bandpassed_signal_array = np.load(os.path.join(motor_path, 'bandpassed_signal_' + str(cnt)+ '.npy'))
                     envelope_array = np.load(os.path.join(motor_path, 'envelope_' + str(cnt)+ '.npy'))
@@ -274,7 +274,7 @@ class Motor_Vibration():
                     data = np.concatenate([numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft], axis = -1)
                     data_list.append(data)
                     target_list.append(target.item())
-        
+                    
         return data_list, target_list
     
     def load_data(self):
@@ -285,6 +285,7 @@ class Motor_Vibration():
         train_motor_power = sorted(list(set(os.listdir(self.root)) - set(self.test_motor_power) - set(self.val_motor_power)))
         for motor_power in train_motor_power:
             motor_power_path = os.path.join(self.root, motor_power)
+            
             for motor in os.listdir(motor_power_path):
                 for fault in os.listdir(os.path.join(motor_power_path, motor)):
                     fault_type_count_list[self.fault_type_dict[fault]] += 1

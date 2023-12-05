@@ -28,10 +28,14 @@ net:
   out_channel2_size : 64
   out_channel3_size : 32
   out_channel4_size : 8
+  out_channel5_size : 4
+  out_channel6_size : 1
   kernel1_size : 64
   kernel2_size : 32
   kernel3_size : 16
   kernel4_size : 4
+  kernel5_size : 2
+  kernel6_size : 2
   lstm_hidden_size : 128
   dense1_out_size : 128
   dense2_out_size : 64

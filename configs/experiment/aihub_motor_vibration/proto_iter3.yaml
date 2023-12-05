@@ -11,7 +11,7 @@ defaults:
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-seed: 42
+seed: 1234
 
 tags: ["aihub_motor_vibration", "ProtoNet_iter3"]
 
