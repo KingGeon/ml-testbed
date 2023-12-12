@@ -18,7 +18,7 @@ defaults:
   - experiment: aihub_motor_vibration/proto_iter3.yaml
 
   # config for hyperparameter optimization
-  - hparams_search: aihub_mtor_vibration_optuna_outputsize_control.yaml
+  - hparams_search: aihub_mtor_vibration_optuna_outputsize_control_proto.yaml
   # optional local config for machine/user specific settings
   # it's optional since it doesn't need to exist and is excluded from version control
   - optional local: default.yaml

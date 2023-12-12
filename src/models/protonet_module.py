@@ -1,4 +1,5 @@
 from typing import Any
+import librosa
 import torch.nn.functional as F
 import torch
 from lightning import LightningModule
@@ -10,13 +11,20 @@ import torch
 import torch.optim as optim
 import numpy as np
 from torch.distributions.dirichlet import Dirichlet
+import os
+import random
+import math
+from src.data.datasets.aihub_motor_vibraion_proto import *
+import matplotlib.pyplot as plt
+
+
 class ProtoNetModule(LightningModule):
     def __init__(self,
                  net: torch.nn.Module,
                  optimizer: torch.optim.Optimizer,
                  scheduler: torch.optim.lr_scheduler,
-                 N_WAY: int = 4,
-                 K_SHOT: int = 4):
+                 N_WAY: int = 5,
+                 K_SHOT: int = 5):
         super().__init__()
         self.save_hyperparameters(logger=False) # self.hparams activation
         self.net = net
@@ -46,7 +54,15 @@ class ProtoNetModule(LightningModule):
         logits = -((a.unsqueeze(1).expand(n, m, -1) -
                     b.unsqueeze(0).expand(n, m, -1))**2).sum(dim=2)
         return logits
-
+    def cosine_similarity(self, a, b):
+    # Normalize vectors
+        a_normalized = a / a.norm(dim=1, keepdim=True)
+        b_normalized = b / b.norm(dim=1, keepdim=True)
+        
+        # Compute cosine similarity
+        similarity = torch.mm(a_normalized, b_normalized.t())
+        
+        return similarity
     
     def fast_adapt(self, model, batch, ways, shot, mode, metric=None, device=None):
         if metric is None:
@@ -79,41 +95,7 @@ class ProtoNetModule(LightningModule):
  
 
         return logits, labels
-    
-    def fast_fake_adapt(self, model, batch, ways, shot, mode, metric=None, device=None):
-        if metric is None:
-            metric = self.pairwise_distances_logits
-        if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        data, labels = batch
-        data = data.to(device)
-        labels = labels.to(device)
 
-        # Sort data samples by labels
-        # TODO: Can this be replaced by ConsecutiveLabels ?
-        alpha = 0.0001 + torch.rand(1) * 0.0002
-        sort = torch.sort(labels)
-        data = data.squeeze(0)[sort.indices].squeeze(0)
-        labels = labels.squeeze(0)[sort.indices].squeeze(0)
-        # Compute support and query embeddings
-        embeddings = model.forward(data)
-        embeddings = model.fault_classfier(embeddings)
-        support_indices = np.zeros(data.size(0), dtype=bool)
-        selection = np.arange(ways) * (shot + shot)
-        for offset in range(shot):
-            support_indices[selection + offset] = True
-        query_indices = torch.from_numpy(~support_indices)
-        support_indices = torch.from_numpy(support_indices)
-        fake_data = self.net.fake_generator(data[support_indices],alpha)
-        fake_embeddings = model.forward(fake_data)
-        fake_embeddings = model.fault_classfier(fake_embeddings)
-        fake_datasupport = fake_embeddings.reshape(ways, shot, -1).mean(dim=1)
-        query = embeddings[query_indices]
-        labels = labels[query_indices].long()
-        logits = self.pairwise_distances_logits(query, fake_datasupport)
- 
-
-        return logits, labels
     
     def make_mixedup(self, data, labels, alpha=0.5):
         mixed_sample_list = []
@@ -171,7 +153,7 @@ class ProtoNetModule(LightningModule):
         support_data = data[support_indices]
         support_label = labels[support_indices]
         mixed_data, _ = self.make_mixedup(support_data,support_label)
-        alpha = 0.6 + torch.rand(1).to(device) * 0.8
+        alpha = 0.95 + torch.rand(1).to(device) * 0.1
         mixed_imbedding = model.forward(mixed_data * alpha)
         mixed_imbedding = model.fault_classfier(mixed_imbedding)
         proto = mixed_imbedding.reshape(ways, 1, -1).mean(dim=1)
@@ -187,10 +169,20 @@ class ProtoNetModule(LightningModule):
         classification_loss = F.cross_entropy(logits, labels)
 
         mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
-        mixedup_classification_loss = F.cross_entropy(mixedup_logits, mixedup_labels)
+        mixedup_classification_loss_1 = F.cross_entropy(mixedup_logits, mixedup_labels)
+        """
+        mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        mixedup_classification_loss_2 = F.cross_entropy(mixedup_logits, mixedup_labels)
+
+        mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        mixedup_classification_loss_3 = F.cross_entropy(mixedup_logits, mixedup_labels)
+
+        mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        mixedup_classification_loss_4 = F.cross_entropy(mixedup_logits, mixedup_labels)
         #fake_logit, fake_labels = self.fast_fake_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
         #fake_classification_loss = F.cross_entropy(fake_logit, fake_labels)
-        
+        """
+        """
         anchor, positive, negative = self.net.prepare_triplet(batch)
         # Feature 추출
         anchor_feature = self.net.forward(anchor)
@@ -198,9 +190,10 @@ class ProtoNetModule(LightningModule):
         negative_feature = self.net.forward(negative)
         # Loss 계산
         triplet_loss = self.net.triplet_loss(anchor_feature, positive_feature, negative_feature)
-        
+        """
         # 전체 손실
-        total_loss = 0.01 * triplet_loss + mixedup_classification_loss
+        total_loss =  classification_loss # 0.25*mixedup_classification_loss_1 + 0.25*mixedup_classification_loss_2 + 0.25*mixedup_classification_loss_3 + 0.25*mixedup_classification_loss_4
+            
 
         self.train_loss(total_loss)
         self.train_acc(logits, labels)
@@ -223,12 +216,11 @@ class ProtoNetModule(LightningModule):
         logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
         classification_loss = F.cross_entropy(logits, labels)
 
-
         self.val_loss(classification_loss)
         self.val_acc(logits, labels)
         self.log('val/loss', self.val_loss, on_step=False, on_epoch=True, prog_bar=False)
         self.log('val/acc', self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
-    
+
     def on_validation_epoch_end(self):
         acc = self.val_acc.compute()
         self.val_acc_best(acc)
@@ -236,6 +228,7 @@ class ProtoNetModule(LightningModule):
         
     def test_step(self, batch, batch_idx):
         logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        torch.save(self.net.state_dict(), '/home/geon/dev_geon/ml-testbed/src/models/components/my_model_weights.pth')
         classification_loss = F.cross_entropy(logits, labels)
         self.test_loss(classification_loss)
         self.test_acc(logits, labels)
@@ -243,6 +236,7 @@ class ProtoNetModule(LightningModule):
         self.log('test/acc', self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_end(self):
+        
         pass
 
     def configure_optimizers(self):

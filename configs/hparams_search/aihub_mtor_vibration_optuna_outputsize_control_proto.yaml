@@ -69,7 +69,7 @@ hydra:
       model.net.lstm_hidden_size: 64
       model.net.dense1_out_size : 64
       model.net.dense2_out_size : 16
-      model.net.output_size : 5
+      model.net.output_size : choice(8, 7, 6, 5, 4, 3, 2)
       model.net.topk_freq : 10
       model.net.discriminator_dense1_outsize : 64
       model.net.discriminator_dense2_outsize : 16

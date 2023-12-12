@@ -4,8 +4,8 @@
 # python train.py experiment=example
 
 defaults:
-  - override /data: aihub_motor_vibration_proto.yaml
-  - override /model: conv_lstm_classifier_proto_outputsize_control.yaml
+  - override /data: aihub_motor_vibration.yaml
+  - override /model: conv_lstm_classifier_proto_outputsize_control_not_meta.yaml
   - override /callbacks: default.yaml
   - override /trainer: default.yaml
 
@@ -13,10 +13,10 @@ defaults:
 # this allows you to overwrite only specified parameters
 seed: 1234
 
-tags: ["aihub_motor_vibration", "ProtoNet_iter3_nomixup_notriplet"]
+tags: ["aihub_motor_vibration", "DL"]
 
 logger:
   wandb:
-    project: "aihub_motor_vibration-ProtoNet2"
-    tags: ['ProtoNet_iter3_nomixup_notriplet']
-    name: "ProtoNet_iter3_nomixup_notriplet"
+    project: "aihub_motor_vibration-DL"
+    tags: ['DL']
+    name: "DL"

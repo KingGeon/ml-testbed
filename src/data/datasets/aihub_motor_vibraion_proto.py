@@ -107,14 +107,17 @@ class CustomDatasetWithBandpass(Dataset):
         np.random.shuffle(indices)
         self.data = [self.data[i] for i in indices]
         self.targets = [self.targets[i] for i in indices]
+        
     def __len__(self):
         return len(self.data)
+        
 
     def __getitem__(self, idx):
         x = torch.Tensor(self.data[idx])
         y = self.targets[idx]
         
         return x, y
+    
     def get_targets(self):
         return torch.LongTensor(self.targets)
 
@@ -122,7 +125,7 @@ class Motor_Vibration():
     def __init__(
         self,
         test_motor_power: List[str] = ["11kW"],
-        val_motor_power: List[str] = ["11kW"],
+        val_motor_power: List[str] = ["2.2kW"],
         sampling_frequency_before_upsample: int = 4000,
         sampling_frequency_after_upsample: int = 8192,
         fault_type_dict = {"정상": 0,
@@ -132,7 +135,7 @@ class Motor_Vibration():
               "회전체불평형": 4},
         upsample_method : str = "soxr_vhq", #["soxr_vhq", "soxr_hq","kaiser_fast","kaiser_best","sinc_best","sinc_fastest"]
         train: bool = True,
-        csv_num_to_use: int = 480,
+        csv_num_to_use: int = 100,
         root: str = "/home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration"
     ):
         super().__init__()
@@ -242,12 +245,12 @@ class Motor_Vibration():
         data_list = []
         target_list = []
         motor_power_path = os.path.join(data_root, motor_power)
-
         for motor in os.listdir(motor_power_path):
             for fault in os.listdir(os.path.join(motor_power_path, motor)):
                 motor_path = os.path.join(motor_power_path, motor, fault)
                 csv_list = [file for file in os.listdir(motor_path) if file.endswith('.csv')]
-                random.shuffle(csv_list)
+                if fault != "정상":
+                    random.shuffle(csv_list)    
                 cnt = 0
                 for csv in csv_list[:int(fault_type_count_list[0]/fault_type_count_list[self.fault_type_dict[fault]]*csv_num_to_use)]:  # Taking first 2000 files after shuffling
                     '''
@@ -265,17 +268,57 @@ class Motor_Vibration():
                     '''
                     
                     numpy_array = np.load(os.path.join(motor_path, 'numpy_array_' + str(cnt)+ '.npy'))
+                    motor_power_array = np.ones_like(numpy_array)*float(str(motor_power[:-2]))
                     bandpassed_signal_array = np.load(os.path.join(motor_path, 'bandpassed_signal_' + str(cnt)+ '.npy'))
                     envelope_array = np.load(os.path.join(motor_path, 'envelope_' + str(cnt)+ '.npy'))
                     envelop_spectrum_array = np.load(os.path.join(motor_path, 'envelop_spectrum_' + str(cnt)+ '.npy'))
                     eofft = np.load(os.path.join(motor_path, 'eofft_' + str(cnt)+ '.npy'))
                     target = np.load(os.path.join(motor_path, 'target_' + str(cnt)+ '.npy'))
                     cnt += 1
-                    data = np.concatenate([numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft], axis = -1)
+                    data = np.concatenate([numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft, motor_power_array], axis = -1)
                     data_list.append(data)
                     target_list.append(target.item())
-                    
         return data_list, target_list
+
+    def process_motor_power_normal(self, data_root, motor_power, csv_num_to_use, fault_type_count_list):
+            data_list = []
+            target_list = []
+            motor_power_path = os.path.join(data_root, motor_power)
+
+            for motor in os.listdir(motor_power_path):
+                for fault in os.listdir(os.path.join(motor_power_path, motor)):
+                    if fault == "정상":
+                        motor_path = os.path.join(motor_power_path, motor, fault)
+                        csv_list = [file for file in os.listdir(motor_path) if file.endswith('.csv')]
+                        #random.shuffle(csv_list)
+                        cnt = 0
+                        for csv in csv_list[:int(fault_type_count_list[0]/fault_type_count_list[self.fault_type_dict[fault]]*csv_num_to_use//2)]:  # Taking first 2000 files after shuffling
+                            '''
+                            numpy_array, bandpassed_signal, envelope, envelop_spectrum, eofft, target = self.process_csv(os.path.join(motor_path,csv), fault)
+                            np.save(os.path.join(motor_path, 'numpy_array_' + str(cnt)+ '.npy'), numpy_array)
+                            np.save(os.path.join(motor_path, 'bandpassed_signal_' + str(cnt)+ '.npy'), bandpassed_signal)
+                            np.save(os.path.join(motor_path, 'envelope_' + str(cnt)+ '.npy'), envelope)
+                            np.save(os.path.join(motor_path, 'envelop_spectrum_' + str(cnt)+ '.npy'), envelop_spectrum)
+                            np.save(os.path.join(motor_path, 'eofft_' + str(cnt)+ '.npy'), eofft)
+                            np.save(os.path.join(motor_path, 'target_' + str(cnt)+ '.npy'), target)
+                            cnt += 1
+                            data = np.concatenate([numpy_array,bandpassed_signal, envelope, envelop_spectrum, eofft], axis = -1)
+                            data_list.append(data)
+                            target_list.append(target)
+                            '''
+                            
+                            numpy_array = np.load(os.path.join(motor_path, 'numpy_array_' + str(cnt)+ '.npy'))
+                            bandpassed_signal_array = np.load(os.path.join(motor_path, 'bandpassed_signal_' + str(cnt)+ '.npy'))
+                            envelope_array = np.load(os.path.join(motor_path, 'envelope_' + str(cnt)+ '.npy'))
+                            envelop_spectrum_array = np.load(os.path.join(motor_path, 'envelop_spectrum_' + str(cnt)+ '.npy'))
+                            eofft = np.load(os.path.join(motor_path, 'eofft_' + str(cnt)+ '.npy'))
+                            target = np.load(os.path.join(motor_path, 'target_' + str(cnt)+ '.npy'))
+                            cnt += 1
+                            data = np.concatenate([numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft], axis = -1)
+                            data_list.append(data)
+                            target_list.append(target.item())
+                        
+            return data_list, target_list
     
     def load_data(self):
         train_data_list = []
@@ -294,7 +337,16 @@ class Motor_Vibration():
             motor_data, motor_targets = self.process_motor_power(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
             train_data_list.extend(motor_data)
             train_target_list.extend(motor_targets)
-
+        '''
+        for motor_power in tqdm(self.test_motor_power, desc='Processing Motor Powers'):
+            motor_data, motor_targets = self.process_motor_power_normal(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
+            train_data_list.extend(motor_data)
+            train_target_list.extend(motor_targets)
+        for motor_power in tqdm(self.val_motor_power, desc='Processing Motor Powers'):
+            motor_data, motor_targets = self.process_motor_power_normal(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
+            train_data_list.extend(motor_data)
+            train_target_list.extend(motor_targets)                        
+        '''
         test_data_list = []
         test_target_list = []
         fault_type_count_list = [0,0,0,0,0]
@@ -320,12 +372,13 @@ class Motor_Vibration():
         print(fault_type_count_list)
         for motor_power in tqdm(self.val_motor_power, desc='Processing Motor Powers'):
             motor_data, motor_targets = self.process_motor_power(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
-            
             val_data_list.extend(motor_data)
             val_target_list.extend(motor_targets)
+
         train_dataset = CustomDatasetWithBandpass(train_data_list, train_target_list)
         val_dataset = CustomDatasetWithBandpass(val_data_list, val_target_list)
         test_dataset = CustomDatasetWithBandpass(test_data_list, test_target_list)
+        
 
         return train_dataset, val_dataset, test_dataset
 

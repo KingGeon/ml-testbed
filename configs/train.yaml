@@ -5,7 +5,7 @@
 defaults:
   - _self_
   - data: aihub_motor_vibration.yaml
-  - model: conv_lstm_classifier.yaml
+  - model: conv_lstm_classifier_proto_outputsize_control_not_meta.yaml
   - callbacks: default.yaml
   - logger: wandb # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - trainer: default.yaml
@@ -15,10 +15,10 @@ defaults:
 
   # experiment configs allow for version control of specific hyperparameters
   # e.g. best hyperparameters for given model and datamodule
-  - experiment: null
+  - experiment: aihub_motor_vibration/train.yaml
 
   # config for hyperparameter optimization
-  - hparams_search: aihub_mtor_vibration_optuna.yaml
+  - hparams_search: aihub_mtor_vibration_optuna_outputsize_control.yaml
 
   # optional local config for machine/user specific settings
   # it's optional since it doesn't need to exist and is excluded from version control

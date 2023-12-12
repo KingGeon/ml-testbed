@@ -8,17 +8,18 @@ sys.path.append("../../..")
 from lightning import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
 import pyrootutils
+import gc
 path = pyrootutils.find_root(search_from=__file__, indicator=".project-root")
 pyrootutils.set_root(path = path,
                      project_root_env_var = True,
                      dotenv = True,
                      pythonpath = True)
-from src.data.datasets.aihub_motor_vibraion import Motor_Vibration
-
+from src.data.datasets.aihub_motor_vibraion_proto import Motor_Vibration
 
 class Motor_Vibration_DataModule(LightningDataModule):
     def __init__(self,
-                test_motor_power: List[float] = ["2.2kW"],
+                test_motor_power: List[str] = ["11kW"],
+                val_motor_power: List[str] = ["2.2kW"],
                 sampling_frequency_before_upsample: str = 4000,
                 sampling_frequency_after_upsample: str = 8192,
                 fault_type_dict = {"정상": 0,
@@ -28,9 +29,8 @@ class Motor_Vibration_DataModule(LightningDataModule):
                     "회전체불평형": 4},
                 upsample_method = "soxr_vhq", #["soxr_vhq", "soxr_hq","kaiser_fast","kaiser_best","sinc_best","sinc_fastest"]
                 train: bool = True,
-                csv_num_to_use: int = 480,
+                csv_num_to_use: int = 50,
                 data_dir: str = "/home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration",
-                train_val_split: Tuple[float, float, float] = [0.7, 0.3],
                 batch_size: int = 256,
                 num_workers: int = 16,
                 pin_memory: bool = True,
@@ -46,15 +46,15 @@ class Motor_Vibration_DataModule(LightningDataModule):
 
     def setup(self,stage):
         if not self.data_train and not self.data_val and not self.data_test:
-            self.data_train, self.data_val, self.data_test = Motor_Vibration(test_motor_power = self.hparams.test_motor_power,
-                         sampling_frequency_before_upsample = self.hparams.sampling_frequency_before_upsample, 
-                         sampling_frequency_after_upsample = self.hparams.sampling_frequency_after_upsample, 
-                         fault_type_dict = self.hparams.fault_type_dict,
-                         upsample_method = self.hparams.upsample_method,
-                         train = self.hparams.train,
-                         csv_num_to_use=self.hparams.csv_num_to_use,
-                         train_val_test_split = self.hparams.train_val_split,
-                         root = self.hparams.data_dir).load_data()
+            self.data_train, self.data_val, self.data_test = Motor_Vibration(test_motor_power = self.hparams.test_motor_power, 
+                                                             val_motor_power = self.hparams.val_motor_power,
+                        sampling_frequency_before_upsample = self.hparams.sampling_frequency_before_upsample, 
+                        sampling_frequency_after_upsample = self.hparams.sampling_frequency_after_upsample, 
+                        fault_type_dict = self.hparams.fault_type_dict,
+                        upsample_method = self.hparams.upsample_method,
+                        train = self.hparams.train,
+                        csv_num_to_use=self.hparams.csv_num_to_use,
+                        root = self.hparams.data_dir).load_data()
             
     def train_dataloader(self):
         return DataLoader(dataset=self.data_train,
@@ -79,6 +79,15 @@ class Motor_Vibration_DataModule(LightningDataModule):
                           pin_memory=self.hparams.pin_memory,
                           persistent_workers=self.hparams.persistent_workers,
                           shuffle=False)
+    def teardown(self, stage: Optional[str] = None):
+        """Clean up after fit or test."""
+        # Explicitly delete the datasets
+        self.data_train = None
+        self.data_val = None
+        self.data_test = None
+
+        # Call the garbage collector
+        gc.collect()
      
 if __name__ == '__main__':
     _ = Motor_Vibration_DataModule()

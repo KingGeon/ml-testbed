@@ -4,7 +4,10 @@ import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
-
+from src.data.datasets.aihub_motor_vibraion_proto import *
+import matplotlib.pyplot as plt
+from torchmetrics import ConfusionMatrix
+import seaborn as sns
 
 class ClassificationModule(LightningModule):
     def __init__(self,
@@ -12,6 +15,7 @@ class ClassificationModule(LightningModule):
                  optimizer: torch.optim.Optimizer,
                  scheduler: torch.optim.lr_scheduler):
         super().__init__()
+        self.test_conf_matrix = ConfusionMatrix(num_classes=5)
         self.save_hyperparameters(logger=False) # self.hparams activation
         self.net = net
         self.criterion = torch.nn.CrossEntropyLoss()
@@ -36,7 +40,8 @@ class ClassificationModule(LightningModule):
         
     def model_step(self, batch: Any):
         x, y = batch
-        logits = self.forward(x)
+        logits = self.net.forward(x)
+        logits = self.net.fault_classfier(logits)
         loss = self.criterion(logits, y)
         preds = torch.argmax(logits, dim = 1)
         return loss, preds, y
@@ -69,13 +74,24 @@ class ClassificationModule(LightningModule):
         
     def test_step(self, batch, batch_index: int):
         loss, preds, targets = self.model_step(batch)
+        self.test_conf_matrix(preds, targets)
         self.test_loss(loss)
         self.test_acc(preds, targets)
         self.log('test/loss', self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log('test/acc', self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
         
     def on_test_epoch_end(self):
-        pass
+        conf_matrix = self.test_conf_matrix.compute()
+        self.save_confusion_matrix(conf_matrix)
+
+    def save_confusion_matrix(self, matrix):
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(pd.DataFrame(matrix.cpu().numpy()), annot=True, fmt='g', cmap='Blues')
+        plt.ylabel('Actual')
+        plt.xlabel('Predicted')
+        plt.title('Confusion Matrix')
+        plt.savefig('/home/geon/dev_geon/ml-testbed/src/figures/confusion_matrix.png')
+        plt.close()
     
     def configure_optimizers(self):
         optimizer=self.hparams.optimizer(params=self.parameters())

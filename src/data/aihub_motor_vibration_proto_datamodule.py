@@ -21,7 +21,7 @@ from learn2learn.data.transforms import NWays, KShots, LoadData, RemapLabels
 class Motor_Vibration_Meta_DataModule(LightningDataModule):
     def __init__(self,
                 test_motor_power: List[str] = ["11kW"],
-                val_motor_power: List[str] = ["11kW"],
+                val_motor_power: List[str] = ["2.2kW"],
                 sampling_frequency_before_upsample: str = 4000,
                 sampling_frequency_after_upsample: str = 8192,
                 fault_type_dict = {"정상": 0,
@@ -31,10 +31,10 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
                     "회전체불평형": 4},
                 upsample_method = "soxr_vhq", #["soxr_vhq", "soxr_hq","kaiser_fast","kaiser_best","sinc_best","sinc_fastest"]
                 train: bool = True,
-                csv_num_to_use: int = 240,
+                csv_num_to_use: int = 100,
                 data_dir: str = "/home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration",
-                N_WAY = 4,
-                K_SHOT = 4,
+                N_WAY = 5,
+                K_SHOT = 5,
                 num_workers: int = 4,
                 pin_memory: bool = False,
                 persistent_workers: bool = False):
@@ -71,7 +71,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
         train_tasks = l2l.data.Taskset(
             self.data_train,
             task_transforms=train_transforms,
-            num_tasks= 3000,
+            num_tasks= 1000,
         )
         return DataLoader(dataset = train_tasks,
                           num_workers = self.hparams.num_workers,
@@ -89,7 +89,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
         valid_tasks = l2l.data.Taskset(
             self.data_val,
             task_transforms=valid_transforms,
-            num_tasks=500,
+            num_tasks=200,
         )
         return DataLoader(dataset = valid_tasks,
                           num_workers = self.hparams.num_workers,
@@ -107,7 +107,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
         test_tasks = l2l.data.Taskset(
             self.data_test,
             task_transforms = test_transforms,
-            num_tasks=500,
+            num_tasks=200,
         )
         return DataLoader(dataset = test_tasks,
                           num_workers = self.hparams.num_workers,
