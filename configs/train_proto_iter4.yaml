@@ -4,9 +4,9 @@
 # order of defaults determines the order in which configs override each other
 defaults:
   - _self_
-  - data: aihub_motor_vibration.yaml
-  - model: conv_lstm_classifier_proto_outputsize_control_not_meta.yaml
-  - callbacks: none.yaml
+  - data: aihub_motor_vibration_proto.yaml
+  - model: conv_lstm_classifier_proto_outputsize_control_mixup_triplet.yaml
+  - callbacks: default.yaml
   - logger: wandb # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - trainer: default.yaml
   - paths: default.yaml
@@ -15,11 +15,10 @@ defaults:
 
   # experiment configs allow for version control of specific hyperparameters
   # e.g. best hyperparameters for given model and datamodule
-  - experiment: aihub_motor_vibration/train.yaml
+  - experiment: aihub_motor_vibration/proto_iter4.yaml
 
   # config for hyperparameter optimization
-  - hparams_search: aihub_mtor_vibration_optuna_outputsize_control.yaml
-
+  - hparams_search: aihub_mtor_vibration_optuna_outputsize_control_proto.yaml
   # optional local config for machine/user specific settings
   # it's optional since it doesn't need to exist and is excluded from version control
   - optional local: default.yaml
@@ -28,12 +27,12 @@ defaults:
   - debug: null
 
 # task name, determines output directory path
-task_name: "train"
+task_name: "train_proto_iter3"
 
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs
 # overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
-tags: ["dev"]
+tags: ["aihub_motor_vibration", "ProtoNet_iter3"]
 
 # set False to skip model training
 train: True
@@ -49,4 +48,4 @@ compile: False
 ckpt_path: null
 
 # seed for random number generators in pytorch, numpy and python.random
-seed: null
+seed: 1234

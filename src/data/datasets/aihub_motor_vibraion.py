@@ -82,7 +82,9 @@ class CustomDatasetWithBandpass(Dataset):
 class Motor_Vibration():
     def __init__(
         self,
-        test_motor_power: List[float] = ["2.2kW"],
+        train_motor_power: List[str] = ["5.5kW"],
+        test_motor_power: List[str] = ["11kW"],
+
         sampling_frequency_before_upsample: int = 4000,
         sampling_frequency_after_upsample: int = 8192,
         fault_type_dict = {"정상": 0,
@@ -97,6 +99,7 @@ class Motor_Vibration():
         root: str = "/home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration"
     ):
         super().__init__()
+        self.train_motor_power = train_motor_power
         self.test_motor_power = test_motor_power
         self.sampling_frequency_before_upsample = sampling_frequency_before_upsample
         self.sampling_frequency_after_upsample = sampling_frequency_after_upsample
@@ -192,14 +195,14 @@ class Motor_Vibration():
         train_data_list = []
         train_target_list = []
         fault_type_count_list = [0,0,0,0,0]
-        train_motor_power = sorted(list(set(os.listdir(self.root)) - set(self.test_motor_power)))
-        for motor_power in train_motor_power:
+        #train_motor_power = sorted(list(set(os.listdir(self.root)) - set(self.test_motor_power)))
+        for motor_power in self.train_motor_power:
             motor_power_path = os.path.join(self.root, motor_power)
             for motor in os.listdir(motor_power_path):
                 for fault in os.listdir(os.path.join(motor_power_path, motor)):
                     fault_type_count_list[self.fault_type_dict[fault]] += 1
         print(fault_type_count_list)
-        for motor_power in tqdm(train_motor_power, desc='Processing Motor Powers'):
+        for motor_power in tqdm(self.train_motor_power, desc='Processing Motor Powers'):
             motor_data, motor_targets = self.process_motor_power(self.root, motor_power,self.csv_num_to_use,fault_type_count_list)
             train_data_list.extend(motor_data)
             train_target_list.extend(motor_targets)

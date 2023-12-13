@@ -658,10 +658,7 @@ class CONV_LSTM_Classifier(nn.Module):
         z = z[:, -1, :]  # Take the last time step
         z = z + self.metadata_embedding(power)
         if self.use_fft_stat:
-            if self.use_eofft:
-                fft_hs = self.fft_hs(eofft)
-            else:
-                fft_hs = self.fft_hs(fft)
+            fft_hs = self.fft_hs(fft)
             z = torch.cat((z, fft_hs), dim=-1) 
         if self.use_stat:
             hs = self.hs(x)

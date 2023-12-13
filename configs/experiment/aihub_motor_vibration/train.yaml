@@ -6,17 +6,17 @@
 defaults:
   - override /data: aihub_motor_vibration.yaml
   - override /model: conv_lstm_classifier_proto_outputsize_control_not_meta.yaml
-  - override /callbacks: default.yaml
+  - override /callbacks: none.yaml
   - override /trainer: default.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 seed: 1234
 
-tags: ["aihub_motor_vibration", "DL"]
+tags: ["aihub_motor_vibration", "DL-2"]
 
 logger:
   wandb:
     project: "aihub_motor_vibration-DL"
-    tags: ['DL']
-    name: "DL"
+    tags: ['DL-2']
+    name: "DL-2"

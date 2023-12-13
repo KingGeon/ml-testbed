@@ -20,8 +20,8 @@ import learn2learn as l2l
 from learn2learn.data.transforms import NWays, KShots, LoadData, RemapLabels
 class Motor_Vibration_Meta_DataModule(LightningDataModule):
     def __init__(self,
-                test_motor_power: List[str] = ["11kW"],
-                val_motor_power: List[str] = ["2.2kW"],
+                test_motor_power: List[str] = ["5.5kW"],
+                val_motor_power: List[str] = ["11kW"],
                 sampling_frequency_before_upsample: str = 4000,
                 sampling_frequency_after_upsample: str = 8192,
                 fault_type_dict = {"정상": 0,
@@ -71,7 +71,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
         train_tasks = l2l.data.Taskset(
             self.data_train,
             task_transforms=train_transforms,
-            num_tasks= 1000,
+            num_tasks= 500,
         )
         return DataLoader(dataset = train_tasks,
                           num_workers = self.hparams.num_workers,

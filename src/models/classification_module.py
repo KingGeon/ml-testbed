@@ -15,7 +15,7 @@ class ClassificationModule(LightningModule):
                  optimizer: torch.optim.Optimizer,
                  scheduler: torch.optim.lr_scheduler):
         super().__init__()
-        self.test_conf_matrix = ConfusionMatrix(num_classes=5)
+        self.test_conf_matrix = ConfusionMatrix(num_classes=5, task='multiclass')
         self.save_hyperparameters(logger=False) # self.hparams activation
         self.net = net
         self.criterion = torch.nn.CrossEntropyLoss()

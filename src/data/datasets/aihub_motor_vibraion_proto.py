@@ -124,8 +124,10 @@ class CustomDatasetWithBandpass(Dataset):
 class Motor_Vibration():
     def __init__(
         self,
-        test_motor_power: List[str] = ["11kW"],
-        val_motor_power: List[str] = ["2.2kW"],
+        #train_motor_power: List[str] = ["5.5kW"],
+        out_motor_power: List[str] = ["3.75kW"],
+        test_motor_power: List[str] = ["5.5kW"],
+        val_motor_power: List[str] = ["11kW"],
         sampling_frequency_before_upsample: int = 4000,
         sampling_frequency_after_upsample: int = 8192,
         fault_type_dict = {"정상": 0,
@@ -139,6 +141,8 @@ class Motor_Vibration():
         root: str = "/home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration"
     ):
         super().__init__()
+        #self.train_motor_power = train_motor_power
+        self.out_motor_power = out_motor_power
         self.test_motor_power = test_motor_power
         self.val_motor_power = val_motor_power
         self.sampling_frequency_before_upsample = sampling_frequency_before_upsample
@@ -249,8 +253,7 @@ class Motor_Vibration():
             for fault in os.listdir(os.path.join(motor_power_path, motor)):
                 motor_path = os.path.join(motor_power_path, motor, fault)
                 csv_list = [file for file in os.listdir(motor_path) if file.endswith('.csv')]
-                if fault != "정상":
-                    random.shuffle(csv_list)    
+                random.shuffle(csv_list)    
                 cnt = 0
                 for csv in csv_list[:int(fault_type_count_list[0]/fault_type_count_list[self.fault_type_dict[fault]]*csv_num_to_use)]:  # Taking first 2000 files after shuffling
                     '''
@@ -325,7 +328,7 @@ class Motor_Vibration():
         train_filterd_data_list = []
         train_target_list = []
         fault_type_count_list = [0,0,0,0,0]
-        train_motor_power = sorted(list(set(os.listdir(self.root)) - set(self.test_motor_power) - set(self.val_motor_power)))
+        train_motor_power = sorted(list(set(os.listdir(self.root)) - set(self.out_motor_power) - set(self.test_motor_power) - set(self.val_motor_power)))
         for motor_power in train_motor_power:
             motor_power_path = os.path.join(self.root, motor_power)
             

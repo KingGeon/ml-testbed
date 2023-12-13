@@ -170,19 +170,11 @@ class ProtoNetModule(LightningModule):
 
         mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
         mixedup_classification_loss_1 = F.cross_entropy(mixedup_logits, mixedup_labels)
-        """
-        mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
-        mixedup_classification_loss_2 = F.cross_entropy(mixedup_logits, mixedup_labels)
 
-        mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
-        mixedup_classification_loss_3 = F.cross_entropy(mixedup_logits, mixedup_labels)
-
-        mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
-        mixedup_classification_loss_4 = F.cross_entropy(mixedup_logits, mixedup_labels)
+  
         #fake_logit, fake_labels = self.fast_fake_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
         #fake_classification_loss = F.cross_entropy(fake_logit, fake_labels)
-        """
-
+        
         """
         anchor, positive, negative = self.net.prepare_triplet(batch)
         # Feature 추출
@@ -192,10 +184,8 @@ class ProtoNetModule(LightningModule):
         # Loss 계산
         triplet_loss = self.net.triplet_loss(anchor_feature, positive_feature, negative_feature)
         """
-        # 전체 손실
-        total_loss =  classification_loss # 0.25*mixedup_classification_loss_1 + 0.25*mixedup_classification_loss_2 + 0.25*mixedup_classification_loss_3 + 0.25*mixedup_classification_loss_4
-            
-
+        # 전체 손실 
+        total_loss =  classification_loss + 0.8 * mixedup_classification_loss_1
         self.train_loss(total_loss)
         self.train_acc(logits, labels)
         self.train_mixed_up_acc(mixedup_logits, mixedup_labels)
@@ -229,7 +219,7 @@ class ProtoNetModule(LightningModule):
         
     def test_step(self, batch, batch_idx):
         logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
-        torch.save(self.net.state_dict(), '/home/geon/dev_geon/ml-testbed/src/models/components/my_model_weights.pth')
+        torch.save(self.net.state_dict(), '/home/geon/dev_geon/ml-testbed/src/models/components/my_model_weights_mixup_triplet.pth')
         classification_loss = F.cross_entropy(logits, labels)
         self.test_loss(classification_loss)
         self.test_acc(logits, labels)
