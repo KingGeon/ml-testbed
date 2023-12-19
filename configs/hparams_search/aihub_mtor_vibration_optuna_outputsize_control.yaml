@@ -54,22 +54,20 @@ hydra:
       model.net.use_eofft: True
       model.net.use_envelope: choice(True, False)
       model.net.use_envelope_spectrum: choice(True, False)
-      model.net.out_channel1_size: choice(32, 16, 8)
-      model.net.out_channel2_size: choice(64, 32, 16)
-      model.net.out_channel3_size: choice(128, 64, 32)
-      model.net.out_channel4_size: choice(64, 32, 16)
-      model.net.out_channel5_size: choice(32, 16, 8)
-      model.net.out_channel6_size: choice(16, 8, 4)
+      model.net.out_channel1_size: 16
+      model.net.out_channel2_size: 32
+      model.net.out_channel3_size: 64
+      model.net.out_channel4_size: 8
+      model.net.out_channel5_size: 4
+      model.net.out_channel6_size: 2
       model.net.kernel1_size: 64
       model.net.kernel2_size: 32
       model.net.kernel3_size: 16
       model.net.kernel4_size: 8
       model.net.kernel5_size: 4
       model.net.kernel6_size: 2
-      model.net.lstm_hidden_size: choice(512,256, 128, 64, 50)
-      model.net.dense1_out_size : choice(512,256, 128, 64, 50)
-      model.net.dense2_out_size : 16
+      model.net.lstm_hidden_size: 64
+      model.net.dense1_out_size : 64
+      model.net.dense2_out_size : 32
       model.net.output_size : 5
       model.net.topk_freq : 10
-      model.net.discriminator_dense1_outsize : 64
-      model.net.discriminator_dense2_outsize : 16

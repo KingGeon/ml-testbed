@@ -1,0 +1,45 @@
+_target_: src.models.protonet_module_no_mixup.ProtoNetModule
+
+optimizer:
+  _target_: torch.optim.AdamW
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0
+  patience: 10
+
+net:
+  _target_: src.models.components.conv_lstm_classifier_no_dropout_outputsize_control.CONV_LSTM_Classifier
+  metadata_embedding : False
+  use_raw : False
+  use_bandpass : False
+  use_bandpass_fft : False
+  use_envelope : True
+  use_envelope_spectrum : False
+  use_eofft : True
+  use_fft_stat : False
+  topk_freq : 10
+  use_stat : True
+  out_channel1_size : 16
+  out_channel2_size : 64
+  out_channel3_size : 32
+  out_channel4_size : 8
+  out_channel5_size : 4
+  out_channel6_size : 2
+  kernel1_size : 64
+  kernel2_size : 32
+  kernel3_size : 16
+  kernel4_size : 4
+  kernel5_size : 2
+  kernel6_size : 2
+  lstm_hidden_size : 64
+  dense1_out_size : 64
+  dense2_out_size : 32
+  discriminator_dense1_outsize : 64
+  discriminator_dense2_outsize : 16
+  output_size: 2

@@ -5,7 +5,7 @@
 
 defaults:
   - override /data: aihub_motor_vibration_proto.yaml
-  - override /model: conv_lstm_classifier_proto_outputsize_control_mixup_triplet.yaml
+  - override /model: conv_lstm_classifier_proto_outputsize_control_no_mixup.yaml
   - override /callbacks: default.yaml
   - override /trainer: default.yaml
 
@@ -13,10 +13,10 @@ defaults:
 # this allows you to overwrite only specified parameters
 seed: 1234
 
-tags: ["aihub_motor_vibration", "ProtoNet_iter3_mixup"]
+tags: ["aihub_motor_vibration", "ProtoNet_no_mixup"]
 
 logger:
   wandb:
-    project: "aihub_motor_vibration-ProtoNet2"
-    tags: ['ProtoNet_iter3_mixup']
-    name: "ProtoNet_iter3_mixup"
+    project: "aihub_motor_vibration-ProtoNet_for_application"
+    tags: ['ProtoNet_no_mixup']
+    name: "ProtoNet_no_mixup"

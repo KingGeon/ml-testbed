@@ -1,6 +1,6 @@
 _target_: src.data.aihub_motor_vibration_proto_datamodule.Motor_Vibration_Meta_DataModule
 data_dir: /home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration
-csv_num_to_use: 100
+csv_num_to_use: 10
 num_workers: 8
 pin_memory: True
 persistent_workers: True

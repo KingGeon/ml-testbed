@@ -34,6 +34,31 @@ class TripletLoss(nn.Module):
     def forward(self, anchor, positive, negative):
         return self.triplet_loss(anchor, positive, negative)
     
+class AE(nn.Module):
+    def __init__(self, input_size, hidden_size):
+        super(AE, self).__init__()
+        # 인코더: 입력을 잠재 공간으로 매핑
+        self.encoder = nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.SiLU(),
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.SiLU(),
+            nn.Linear(hidden_size // 2, hidden_size // 4)
+        )
+        # 디코더: 잠재 공간을 원래의 데이터로 복원
+        self.decoder = nn.Sequential(
+            nn.Linear(hidden_size // 4, hidden_size // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_size // 2, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, input_size),
+            nn.SiLU()
+        )
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x 
 
 class Health_State_Analysis(nn.Module):
     def __init__(self, length_of_signal=8192):
@@ -284,7 +309,7 @@ class CONV_LSTM_Classifier(nn.Module):
     def __init__(
         self,
         in_length: int = 8192,
-        output_size: int = 5,
+        output_size: int = 64,
         out_channel1_size = 16,
         out_channel2_size = 32,
         out_channel3_size = 64,
@@ -297,9 +322,9 @@ class CONV_LSTM_Classifier(nn.Module):
         kernel4_size = 8,
         kernel5_size = 4,
         kernel6_size = 2,
-        lstm_hidden_size : int = 64,
-        dense1_out_size : int = 64,
-        dense2_out_size : int = 16,
+        lstm_hidden_size : int = 128,
+        dense1_out_size : int = 128,
+        dense2_out_size : int = 128,
         use_raw: bool = False,
         use_bandpass: bool = False,
         use_bandpass_fft: bool = False,
@@ -308,6 +333,7 @@ class CONV_LSTM_Classifier(nn.Module):
         use_eofft: bool = True,
         use_fft_stat: bool = True,
         use_stat: bool = False,
+        metadata_embedding: bool = True,
         topk_freq: int = 10,
         discriminator_dense1_outsize = 64,
         discriminator_dense2_outsize = 16,
@@ -332,6 +358,7 @@ class CONV_LSTM_Classifier(nn.Module):
         self.use_raw = use_raw
         self.use_bandpass = use_bandpass
         self.use_bandpass_fft = use_bandpass_fft
+        self.metadata_embedding = metadata_embedding
 
         self.in_channels =  1 + 9 * int(use_bandpass_fft) +  9 * int(use_bandpass) + 1 * int(use_raw) + int(use_envelope) + int(use_envelope_spectrum)
         # Convolutional layers
@@ -361,7 +388,12 @@ class CONV_LSTM_Classifier(nn.Module):
 
         self.triplet_loss = TripletLoss()
         self.discriminator = Discriminator(dense1_out_size,discriminator_dense1_outsize,discriminator_dense2_outsize)
-              
+        self.ae = AE(self.in_length,256)      
+    def embedding(self,z):
+        
+        z = self.silu(self.dense2(z))
+        return z
+    
     def fault_classfier(self,z):
         
         z = self.dense3(self.silu(self.dense2(z)))
@@ -656,9 +688,13 @@ class CONV_LSTM_Classifier(nn.Module):
         z = self.silu(self.batchnorm6(self.conv6(z)))
         z, _ = self.lstm(z)
         z = z[:, -1, :]  # Take the last time step
-        z = z + self.metadata_embedding(power)
+        if self.metadata_embedding:
+            z = z + self.metadata_embedding(power)
         if self.use_fft_stat:
-            fft_hs = self.fft_hs(fft)
+            if self.use_eofft:
+                fft_hs = self.fft_hs(eofft)
+            else:
+                fft_hs = self.fft_hs(fft)
             z = torch.cat((z, fft_hs), dim=-1) 
         if self.use_stat:
             hs = self.hs(x)

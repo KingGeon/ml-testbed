@@ -23,8 +23,14 @@ class ProtoNetModule(LightningModule):
                  net: torch.nn.Module,
                  optimizer: torch.optim.Optimizer,
                  scheduler: torch.optim.lr_scheduler,
-                 N_WAY: int = 5,
-                 K_SHOT: int = 5):
+                 initial_beta: float = 0.1,
+                 max_beta: float = 0.99,
+                 epochs_to_max: float = 20,
+                 epochs_to_min: float = 10,
+                 initial_alpha: float = 0.99,
+                 max_alpha: float = 0.01,
+                 N_WAY: int = 4,
+                 K_SHOT: int = 10):
         super().__init__()
         self.save_hyperparameters(logger=False) # self.hparams activation
         self.net = net
@@ -34,11 +40,14 @@ class ProtoNetModule(LightningModule):
         self.train_acc = Accuracy(task="multiclass", num_classes= N_WAY)
         self.train_fake_acc = Accuracy(task="multiclass", num_classes= N_WAY)
         self.train_mixed_up_acc = Accuracy(task="multiclass", num_classes= N_WAY)
+        self.train_reconst_mixed_up_acc = Accuracy(task="multiclass", num_classes= N_WAY)
         self.train_mixedup_discriminator_real_acc= Accuracy(task = "binary")
         self.train_mixedup_discriminator_mixedup_acc= Accuracy(task = "binary")
 
         self.val_acc = Accuracy(task="multiclass", num_classes= N_WAY)
+        self.val_mixup_acc = Accuracy(task="multiclass", num_classes= N_WAY)
         self.test_acc = Accuracy(task="multiclass", num_classes= N_WAY)
+        self.test_mixup_acc = Accuracy(task="multiclass", num_classes= N_WAY)
 
         # for averaging loss across batches
         self.train_loss = MeanMetric()
@@ -46,7 +55,15 @@ class ProtoNetModule(LightningModule):
         self.test_loss = MeanMetric()
 
         self.val_acc_best = MaxMetric()
+        self.val_mixup_acc_best = MaxMetric()
         self.test_acc_best = MaxMetric()
+
+        self.initial_beta = initial_beta  # 초기 beta 값
+        self.max_beta = max_beta     # 최대 beta 값
+        self.epochs_to_max = epochs_to_max
+        self.epochs_to_min = epochs_to_min
+        self.initial_alpha = initial_alpha # 초기 alpha 값
+        self.max_alpha = max_alpha      # 최대 alpha 값
 
     def pairwise_distances_logits(self, a, b):
         n = a.shape[0]
@@ -64,7 +81,7 @@ class ProtoNetModule(LightningModule):
         
         return similarity
     
-    def fast_adapt(self, model, batch, ways, shot, mode, metric=None, device=None):
+    def fast_adapt_distance(self, model, batch, ways, shot, mode, metric=None, device=None):
         if metric is None:
             metric = self.pairwise_distances_logits
         if device is None:
@@ -95,8 +112,37 @@ class ProtoNetModule(LightningModule):
  
 
         return logits, labels
-
     
+    def fast_adapt_cos(self, model, batch, ways, shot, mode, metric=None, device=None):
+        if metric is None:
+            metric = self.pairwise_distances_logits
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        data, labels = batch
+        data = data.to(device)
+        labels = labels.to(device)
+
+        # Sort data samples by labels
+        # TODO: Can this be replaced by ConsecutiveLabels ?
+        sort = torch.sort(labels)
+        data = data.squeeze(0)[sort.indices].squeeze(0)
+        labels = labels.squeeze(0)[sort.indices].squeeze(0)
+        # Compute support and query embeddings
+        embeddings = model.forward(data)
+        embeddings = model.fault_classfier(embeddings)
+        support_indices = np.zeros(data.size(0), dtype=bool)
+        selection = np.arange(ways) * (shot + shot)
+        for offset in range(shot):
+            support_indices[selection + offset] = True
+        query_indices = torch.from_numpy(~support_indices)
+        support_indices = torch.from_numpy(support_indices)
+        support = embeddings[support_indices]
+        support = support.reshape(ways, shot, -1).mean(dim=1)
+        query = embeddings[query_indices]
+        labels = labels[query_indices].long()
+        logits = self.cosine_similarity(query, support)
+        return logits, labels
+
     def make_mixedup(self, data, labels, alpha=0.5):
         mixed_sample_list = []
         label_list = []
@@ -153,29 +199,58 @@ class ProtoNetModule(LightningModule):
         support_data = data[support_indices]
         support_label = labels[support_indices]
         mixed_data, _ = self.make_mixedup(support_data,support_label)
-        alpha = 0.8 + torch.rand(1).to(device) * 0.4
+        alpha = 0.95 + torch.rand(1).to(device) * 0.1
         mixed_imbedding = model.forward(mixed_data * alpha)
         mixed_imbedding = model.fault_classfier(mixed_imbedding)
         proto = mixed_imbedding.reshape(ways, 1, -1).mean(dim=1)
         query = embeddings[query_indices]
         labels = labels[query_indices].long()
-        logits = self.pairwise_distances_logits(query, proto)
+        logits = self.cosine_similarity(query, proto)
 
-
-        return logits, labels
-
+        
+        reconstructed_mixed_data = self.net.ae.forward(mixed_data.transpose(2,1))
+        criterion = torch.nn.L1Loss()
+        reconstruction_error = criterion(reconstructed_mixed_data, mixed_data.transpose(2,1))
+        mixed_imbedding = model.forward(reconstructed_mixed_data.transpose(2,1))
+        mixed_imbedding = model.fault_classfier(mixed_imbedding)
+        proto = mixed_imbedding.reshape(ways, 1, -1).mean(dim=1)
+        query = embeddings[query_indices]
+        reconstructed_logits = self.cosine_similarity(query, proto)
+        
+        return logits, labels, reconstructed_logits, reconstruction_error
+    
+    def setup(self, stage=None):
+        # 저장된 가중치 불러오기
+        """
+        if stage == 'fit' or stage is None:
+            model_weights_path = '/home/geon/dev_geon/ml-testbed/src/models/components/ProtoNet_mixup_triplet_no_embedding.pth'
+            self.net.load_state_dict(torch.load(model_weights_path))
+        """
     def training_step(self, batch, batch_idx):
-        logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+
+        current_epoch = self.current_epoch
+        beta = self.initial_beta #+ (self.max_beta - self.initial_beta) * min(1, current_epoch / self.epochs_to_max)
+        alpha = self.initial_alpha + (self.max_alpha - self.initial_alpha) * min(1, current_epoch / self.epochs_to_max)
+        logits, labels = self.fast_adapt_cos(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
         classification_loss = F.cross_entropy(logits, labels)
 
-        mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        mixedup_logits, mixedup_labels, reconstructed_logits, reconstruction_error  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
         mixedup_classification_loss_1 = F.cross_entropy(mixedup_logits, mixedup_labels)
-
-  
-        #fake_logit, fake_labels = self.fast_fake_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
-        #fake_classification_loss = F.cross_entropy(fake_logit, fake_labels)
+        mixedup_classification_loss_2 =  F.cross_entropy(reconstructed_logits, mixedup_labels)
         
         """
+        mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        mixedup_classification_loss_2 = F.cross_entropy(mixedup_logits, mixedup_labels)
+
+        mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        mixedup_classification_loss_3 = F.cross_entropy(mixedup_logits, mixedup_labels)
+
+        mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        mixedup_classification_loss_4 = F.cross_entropy(mixedup_logits, mixedup_labels)
+        #fake_logit, fake_labels = self.fast_fake_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        #fake_classification_loss = F.cross_entropy(fake_logit, fake_labels)
+        """
+    
         anchor, positive, negative = self.net.prepare_triplet(batch)
         # Feature 추출
         anchor_feature = self.net.forward(anchor)
@@ -183,17 +258,21 @@ class ProtoNetModule(LightningModule):
         negative_feature = self.net.forward(negative)
         # Loss 계산
         triplet_loss = self.net.triplet_loss(anchor_feature, positive_feature, negative_feature)
-        """
-        # 전체 손실 
-        total_loss =  classification_loss + 0.8 * mixedup_classification_loss_1
+        
+        # 전체 손실
+        total_loss = mixedup_classification_loss_2 + reconstruction_error + alpha * triplet_loss + (1-alpha)*(beta * classification_loss + (1-beta) * mixedup_classification_loss_1) # 0.25*mixedup_classification_loss_1 + 0.25*mixedup_classification_loss_2 + 0.25*mixedup_classification_loss_3 + 0.25*mixedup_classification_loss_4
+            
+
         self.train_loss(total_loss)
         self.train_acc(logits, labels)
         self.train_mixed_up_acc(mixedup_logits, mixedup_labels)
+        self.train_reconst_mixed_up_acc(reconstructed_logits, mixedup_labels)
         #self.train_fake_acc(fake_logit, fake_labels)
         self.log('train/loss', self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log('train/acc', self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
         #self.log('train_fake/acc', self.train_fake_acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log('train_mixedup/acc', self.train_mixed_up_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('train_mixup/acc', self.train_mixed_up_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log('train_reconst_mixup/acc', self.train_reconst_mixed_up_acc, on_step=False, on_epoch=True, prog_bar=True)
         return total_loss
 
     
@@ -204,27 +283,41 @@ class ProtoNetModule(LightningModule):
         pass
 
     def validation_step(self, batch, batch_idx):
-        logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+
+        logits, labels = self.fast_adapt_cos(self.net, batch, self.N_WAY, self.K_SHOT, mode = "val")
         classification_loss = F.cross_entropy(logits, labels)
+        
+        #mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "val")
+ 
 
         self.val_loss(classification_loss)
         self.val_acc(logits, labels)
+        #self.val_mixup_acc(mixedup_logits, mixedup_labels)
         self.log('val/loss', self.val_loss, on_step=False, on_epoch=True, prog_bar=False)
         self.log('val/acc', self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
-
+        #self.log('val_mixup/acc', self.val_mixup_acc, on_step=False, on_epoch=True, prog_bar=True)
+    
     def on_validation_epoch_end(self):
         acc = self.val_acc.compute()
+        mixup_acc = self.val_mixup_acc.compute()
         self.val_acc_best(acc)
-        self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True), 
+        self.val_mixup_acc_best(mixup_acc)
+        self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True) 
+        #self.log("val_mixup/acc_best", self.val_mixup_acc_best.compute(), sync_dist=True, prog_bar=True)
         
     def test_step(self, batch, batch_idx):
-        logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
-        torch.save(self.net.state_dict(), '/home/geon/dev_geon/ml-testbed/src/models/components/my_model_weights_mixup_triplet.pth')
+
+        logits, labels = self.fast_adapt_cos(self.net, batch, self.N_WAY, self.K_SHOT, mode = "test")
+        torch.save(self.net.state_dict(), '/home/geon/dev_geon/ml-testbed/src/models/components/ProtoNet_mixup_triplet_no_embedding.pth')
+        #mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "test")
+    
         classification_loss = F.cross_entropy(logits, labels)
         self.test_loss(classification_loss)
         self.test_acc(logits, labels)
+        #self.test_mixup_acc(mixedup_logits, mixedup_labels)
         self.log('test/loss', self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log('test/acc', self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
+        #self.log('test_mixup/acc', self.test_mixup_acc, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_end(self):
         

@@ -33,27 +33,29 @@ hydra:
     direction: maximize
 
     # total number of runs that will be executed
-    n_trials: 20
+    n_trials: 10
 
     # choose Optuna hyperparameter sampler
     # you can choose bayesian sampler (tpe), random search (without optimization), grid sampler, and others
     # docs: https://optuna.readthedocs.io/en/stable/reference/samplers.html
     sampler:
       _target_: optuna.samplers.TPESampler
-      seed: 1234
-      n_startup_trials: 20  # number of random sampling runs before optimization starts
+      seed: 23
+      n_startup_trials: 5  # number of random sampling runs before optimization starts
 
     # define hyperparameter search space
     params:
-      model.optimizer.lr: interval(0.005, 0.01)
-      model.net.use_raw : True
-      model.net.use_bandpass : False
-      model.net.use_bandpass_fft : False
+      model.optimizer.lr: 0.0069
+      model.net.metadata_embedding : False
+      model.net.use_raw : False
       model.net.use_stat : True
-      model.net.use_fft_stat : True
+      model.net.use_fft_stat : False
       model.net.use_eofft: True
       model.net.use_envelope: True
-      model.net.use_envelope_spectrum: False
+      model.net.use_envelope_spectrum: True
+      model.net.use_bandpass : True
+      model.net.use_bandpass_fft : False
+
       model.net.out_channel1_size: 16
       model.net.out_channel2_size: 32
       model.net.out_channel3_size: 64
@@ -66,10 +68,12 @@ hydra:
       model.net.kernel4_size: 8
       model.net.kernel5_size: 4
       model.net.kernel6_size: 2
-      model.net.lstm_hidden_size: 64
-      model.net.dense1_out_size : 64
-      model.net.dense2_out_size : 16
-      model.net.output_size : 5
-      model.net.topk_freq : 10
-      model.net.discriminator_dense1_outsize : 64
-      model.net.discriminator_dense2_outsize : 16
+      model.net.lstm_hidden_size: 128
+      model.net.dense1_out_size : 128
+      model.net.dense2_out_size : 128
+      model.net.output_size : 64
+      model.net.topk_freq : 5
+      model.initial_beta: interval(0.01, 0.5)
+      model.max_alpha: interval(0.1, 0.7)
+      model.epochs_to_max: interval(10, 200)
+      model.initial_alpha:  0.01

@@ -15,11 +15,12 @@ scheduler:
 
 net:
   _target_: src.models.components.conv_lstm_classifier_no_dropout_outputsize_control.CONV_LSTM_Classifier
+  metadata_embedding : False
   use_raw : False
   use_bandpass : False
   use_bandpass_fft : False
   use_envelope : True
-  use_envelope_spectrum : False
+  use_envelope_spectrum : True
   use_eofft : True
   use_fft_stat : False
   topk_freq : 10
@@ -29,16 +30,23 @@ net:
   out_channel3_size : 32
   out_channel4_size : 8
   out_channel5_size : 4
-  out_channel6_size : 2
+  out_channel6_size : 1
   kernel1_size : 64
   kernel2_size : 32
   kernel3_size : 16
   kernel4_size : 4
   kernel5_size : 2
   kernel6_size : 2
-  lstm_hidden_size : 64
-  dense1_out_size : 64
-  dense2_out_size : 16
-  discriminator_dense1_outsize : 128
-  discriminator_dense2_outsize : 32
-  output_size: 2
+  lstm_hidden_size : 128
+  dense1_out_size : 128
+  dense2_out_size : 64
+  discriminator_dense1_outsize : 64
+  discriminator_dense2_outsize : 16
+  output_size: 5
+
+initial_beta: 0.1
+max_beta: 0.99
+epochs_to_max: 20
+epochs_to_min: 10
+initial_alpha: 0.99
+max_alpha:  0.01
