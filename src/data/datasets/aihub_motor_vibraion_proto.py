@@ -126,7 +126,7 @@ class Motor_Vibration():
         self,
         #train_motor_power: List[str] = ["5.5kW"],
         out_motor_power: List[str] = [],
-        test_motor_power: List[str] = ["11kW"],
+        test_motor_power: List[str] = ["5.5kW"],
         val_motor_power: List[str] = [],
         sampling_frequency_before_upsample: int = 4000,
         sampling_frequency_after_upsample: int = 8192,
@@ -215,7 +215,7 @@ class Motor_Vibration():
         max_kurtosis_idx = np.argmax(spectral_kurt)
         # Find the corresponding frequency
         max_kurtosis_freq = frequencies[max_kurtosis_idx]
-        while not (max_kurtosis_freq <= 3800 and max_kurtosis_freq >= 150):
+        while not (max_kurtosis_freq <= 6000 and max_kurtosis_freq >= 0):
             spectral_kurt[max_kurtosis_idx] = -np.inf
             max_kurtosis_idx = np.argmax(spectral_kurt)
             max_kurtosis_freq = frequencies[max_kurtosis_idx]
@@ -245,7 +245,49 @@ class Motor_Vibration():
         return data.reshape(-1,1), bandpassed_signal.reshape(-1,9), envelope.reshape(-1,1), envelop_spectrum.reshape(-1,1), eofft.reshape(-1,1), self.fault_type_dict[fault]
 
     # Process the CSV files for each motor power
-    def process_motor_power(self, data_root, motor_power, csv_num_to_use, fault_type_count_list):
+    def process_motor_power(self, data_root, motor_power, csv_num_to_use, fault_type_count_list,motor_dict):
+        data_list = []
+        target_list = []
+        motor_power_path = os.path.join(data_root, motor_power)
+        for motor in os.listdir(motor_power_path):
+            for fault in os.listdir(os.path.join(motor_power_path, motor)):
+                motor_path = os.path.join(motor_power_path, motor, fault)
+                csv_list = [file for file in os.listdir(motor_path) if file.endswith('.csv')]
+                random.shuffle(csv_list)    
+                cnt = 0
+                for csv in csv_list[:int(fault_type_count_list[0]/fault_type_count_list[self.fault_type_dict[fault]]*csv_num_to_use)]:  # Taking first 2000 files after shuffling
+                    
+                    numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft, target = self.process_csv(os.path.join(motor_path,csv), fault)
+                    motor_power_array = np.ones_like(numpy_array)*float(str(motor_power[:-2]))
+                    motor_array = np.ones_like(numpy_array)*motor_dict[motor]
+                    """
+                    np.save(os.path.join(motor_path, 'numpy_array_' + str(cnt)+ '.npy'), numpy_array)
+                    np.save(os.path.join(motor_path, 'bandpassed_signal_' + str(cnt)+ '.npy'), bandpassed_signal)
+                    np.save(os.path.join(motor_path, 'envelope_' + str(cnt)+ '.npy'), envelope)
+                    np.save(os.path.join(motor_path, 'envelop_spectrum_' + str(cnt)+ '.npy'), envelop_spectrum)
+                    np.save(os.path.join(motor_path, 'eofft_' + str(cnt)+ '.npy'), eofft)
+                    np.save(os.path.join(motor_path, 'target_' + str(cnt)+ '.npy'), target)
+                    """
+                    cnt += 1
+                    data = np.concatenate([numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft, motor_power_array,motor_array], axis = -1)
+                    data_list.append(data)
+                    target_list.append(target)
+                    
+                    """
+                    numpy_array = np.load(os.path.join(motor_path, 'numpy_array_' + str(cnt)+ '.npy'))
+                    motor_power_array = np.ones_like(numpy_array)*float(str(motor_power[:-2]))
+                    bandpassed_signal_array = np.load(os.path.join(motor_path, 'bandpassed_signal_' + str(cnt)+ '.npy'))
+                    envelope_array = np.load(os.path.join(motor_path, 'envelope_' + str(cnt)+ '.npy'))
+                    envelop_spectrum_array = np.load(os.path.join(motor_path, 'envelop_spectrum_' + str(cnt)+ '.npy'))
+                    eofft = np.load(os.path.join(motor_path, 'eofft_' + str(cnt)+ '.npy'))
+                    target = np.load(os.path.join(motor_path, 'target_' + str(cnt)+ '.npy'))
+                    cnt += 1
+                    data = np.concatenate([numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft, motor_power_array], axis = -1)
+                    data_list.append(data)
+                    target_list.append(target.item())
+                    """
+        return data_list, target_list
+    def process_motor_power_fault(self, data_root, motor_power, csv_num_to_use, fault_type_count_list,motor_dict):
         data_list = []
         target_list = []
         motor_power_path = os.path.join(data_root, motor_power)
@@ -261,6 +303,7 @@ class Motor_Vibration():
                     
                     numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft, target = self.process_csv(os.path.join(motor_path,csv), fault)
                     motor_power_array = np.ones_like(numpy_array)*float(str(motor_power[:-2]))
+                    motor_array = np.ones_like(numpy_array)*motor_dict[motor]
                     """
                     np.save(os.path.join(motor_path, 'numpy_array_' + str(cnt)+ '.npy'), numpy_array)
                     np.save(os.path.join(motor_path, 'bandpassed_signal_' + str(cnt)+ '.npy'), bandpassed_signal)
@@ -270,7 +313,7 @@ class Motor_Vibration():
                     np.save(os.path.join(motor_path, 'target_' + str(cnt)+ '.npy'), target)
                     """
                     cnt += 1
-                    data = np.concatenate([numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft, motor_power_array], axis = -1)
+                    data = np.concatenate([numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft, motor_power_array,motor_array], axis = -1)
                     data_list.append(data)
                     target_list.append(target)
                     
@@ -289,7 +332,7 @@ class Motor_Vibration():
                     """
         return data_list, target_list
     
-    def process_motor_power_normal(self, data_root, motor_power, csv_num_to_use, fault_type_count_list):
+    def process_motor_power_normal(self, data_root, motor_power, csv_num_to_use, fault_type_count_list,motor_dict):
         data_list = []
         target_list = []
         motor_power_path = os.path.join(data_root, motor_power)
@@ -304,6 +347,7 @@ class Motor_Vibration():
                         
                         numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft, target = self.process_csv(os.path.join(motor_path,csv), fault)
                         motor_power_array = np.ones_like(numpy_array)*float(str(motor_power[:-2]))
+                        motor_array = np.ones_like(numpy_array)*motor_dict[motor]
                         """
                         np.save(os.path.join(motor_path, 'numpy_array_' + str(cnt)+ '.npy'), numpy_array)
                         np.save(os.path.join(motor_path, 'bandpassed_signal_' + str(cnt)+ '.npy'), bandpassed_signal)
@@ -313,7 +357,7 @@ class Motor_Vibration():
                         np.save(os.path.join(motor_path, 'target_' + str(cnt)+ '.npy'), target)
                         """
                         cnt += 1
-                        data = np.concatenate([numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft, motor_power_array], axis = -1)
+                        data = np.concatenate([numpy_array, bandpassed_signal_array, envelope_array, envelop_spectrum_array, eofft, motor_power_array,motor_array], axis = -1)
                         data_list.append(data)
                         target_list.append(target)
                         
@@ -334,31 +378,55 @@ class Motor_Vibration():
     
     def load_data(self):
         train_data_list = []
-        train_filterd_data_list = []
+        motor_list = []
         train_target_list = []
         fault_type_count_list = [0,0,0,0,0]
         train_motor_power = sorted(list(set(os.listdir(self.root)) - set(self.out_motor_power) - set(self.test_motor_power) - set(self.val_motor_power)))
+        for motor_power in self.test_motor_power:
+            motor_power_path = os.path.join(self.root, motor_power)
+            for motor in os.listdir(motor_power_path):
+                motor_list.append(motor)
+        for motor_power in self.val_motor_power:
+            motor_power_path = os.path.join(self.root, motor_power)
+            for motor in os.listdir(motor_power_path):
+                motor_list.append(motor)
+        for motor_power in self.out_motor_power:
+            motor_power_path = os.path.join(self.root, motor_power)
+            for motor in os.listdir(motor_power_path):
+                motor_list.append(motor)
         for motor_power in train_motor_power:
             motor_power_path = os.path.join(self.root, motor_power)
-            
             for motor in os.listdir(motor_power_path):
+                motor_list.append(motor)
                 for fault in os.listdir(os.path.join(motor_power_path, motor)):
                     fault_type_count_list[self.fault_type_dict[fault]] += 1
         print(fault_type_count_list)
+
+        unique_motor_list = list(set(motor_list))
+
+        # Create a dictionary to hold motor names and their vectorized representations
+        motor_dict = {}
+        for index, motor_name in enumerate(unique_motor_list):
+            motor_dict[motor_name] = index  # Or any other vectorization logic
+
         for motor_power in tqdm(train_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_targets = self.process_motor_power(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
+            motor_data, motor_targets = self.process_motor_power(self.root, motor_power, self.csv_num_to_use, fault_type_count_list,motor_dict)
             train_data_list.extend(motor_data)
             train_target_list.extend(motor_targets)
-    
+        for motor_power in tqdm(self.out_motor_power, desc='Processing Motor Powers'):
+            motor_data, motor_targets = self.process_motor_power_normal(self.root, motor_power, self.csv_num_to_use, fault_type_count_list,motor_dict)
+            train_data_list.extend(motor_data)
+            train_target_list.extend(motor_targets)
         for motor_power in tqdm(self.test_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_targets = self.process_motor_power_normal(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
+            motor_data, motor_targets = self.process_motor_power_normal(self.root, motor_power, self.csv_num_to_use, fault_type_count_list,motor_dict)
             train_data_list.extend(motor_data)
             train_target_list.extend(motor_targets)
         for motor_power in tqdm(self.val_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_targets = self.process_motor_power_normal(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
+            motor_data, motor_targets = self.process_motor_power_normal(self.root, motor_power, self.csv_num_to_use, fault_type_count_list,motor_dict)
             train_data_list.extend(motor_data)
-            train_target_list.extend(motor_targets)                        
-
+            train_target_list.extend(motor_targets)           
+        
+        #test set
         test_data_list = []
         test_target_list = []
         fault_type_count_list = [0,0,0,0,0]
@@ -369,36 +437,28 @@ class Motor_Vibration():
                     fault_type_count_list[self.fault_type_dict[fault]] += 1
         print(fault_type_count_list)
         for motor_power in tqdm(self.test_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_targets = self.process_motor_power(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
+            motor_data, motor_targets = self.process_motor_power_fault(self.root, motor_power, self.csv_num_to_use, fault_type_count_list,motor_dict)
             test_data_list.extend(motor_data)
             test_target_list.extend(motor_targets)
-        
+
+
+        #val set
         val_data_list = []
         val_target_list = []    
         fault_type_count_list = [0,0,0,0,0]
-        
         train_motor_power = sorted(list(set(os.listdir(self.root)) - set(self.out_motor_power) - set(self.test_motor_power) - set(self.val_motor_power)))
         for motor_power in train_motor_power:
-            motor_power_path = os.path.join(self.root, motor_power)
-            
+            motor_power_path = os.path.join(self.root, motor_power)  
             for motor in os.listdir(motor_power_path):
                 for fault in os.listdir(os.path.join(motor_power_path, motor)):
                     fault_type_count_list[self.fault_type_dict[fault]] += 1
         print(fault_type_count_list)
         for motor_power in tqdm(train_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_targets = self.process_motor_power(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
+            motor_data, motor_targets = self.process_motor_power_fault(self.root, motor_power, self.csv_num_to_use, fault_type_count_list,motor_dict)
             val_data_list.extend(motor_data)
             val_target_list.extend(motor_targets)
-        """
-        for motor_power in tqdm(self.test_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_targets = self.process_motor_power_normal(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
-            val_data_list.extend(motor_data)
-            val_target_list.extend(motor_targets)
-        for motor_power in tqdm(self.val_motor_power, desc='Processing Motor Powers'):
-            motor_data, motor_targets = self.process_motor_power_normal(self.root, motor_power, self.csv_num_to_use, fault_type_count_list)
-            val_data_list.extend(motor_data)
-            val_target_list.extend(motor_targets)   
-        """
+        
+        
         """
         for motor_power in self.val_motor_power:
             motor_power_path = os.path.join(self.root, motor_power)

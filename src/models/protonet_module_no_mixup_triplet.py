@@ -23,6 +23,10 @@ class ProtoNetModule(LightningModule):
                  net: torch.nn.Module,
                  optimizer: torch.optim.Optimizer,
                  scheduler: torch.optim.lr_scheduler,
+                 initial_beta:float = 0.4,
+                 max_alpha: float = 0.5,
+                 epochs_to_max: int =  10,
+                 initial_alpha: float = 0.01,
                  N_WAY: int = 5,
                  K_SHOT: int = 5):
         super().__init__()
@@ -50,9 +54,11 @@ class ProtoNetModule(LightningModule):
         self.val_acc_best = MaxMetric()
         self.val_mixup_acc_best = MaxMetric()
         self.test_acc_best = MaxMetric()
-        self.initial_beta = 0.0 # 초기 beta 값
-        self.max_beta = 0.0   # 최대 beta 값
-        self.epochs_to_max = 30
+        self.initial_beta = initial_beta  # 초기 beta 값  # 최대 beta 값
+        self.epochs_to_max = epochs_to_max
+        self.initial_alpha = initial_alpha # 초기 alpha 값
+        self.max_alpha = max_alpha    
+
 
     def pairwise_distances_logits(self, a, b):
         n = a.shape[0]
@@ -159,7 +165,7 @@ class ProtoNetModule(LightningModule):
         support_data = data[support_indices]
         support_label = labels[support_indices]
         mixed_data, _ = self.make_mixedup(support_data,support_label)
-        alpha = 0.9 + torch.rand(1).to(device) * 0.2
+        alpha = 0.95 + torch.rand(1).to(device) * 0.1
         mixed_imbedding = model.forward(mixed_data * alpha)
         mixed_imbedding = model.fault_classfier(mixed_imbedding)
         proto = mixed_imbedding.reshape(ways, 1, -1).mean(dim=1)
@@ -174,15 +180,14 @@ class ProtoNetModule(LightningModule):
         # 저장된 가중치 불러오기
         """
         if stage == 'fit' or stage is None:
-            model_weights_path = '/home/geon/dev_geon/ml-testbed/src/models/components/ProtoNet_no_mixup_triplet_no_embedding.pth'
+            model_weights_path = '/home/geon/dev_geon/ml-testbed/src/models/components/ProtoNet_no_mixup_triplet_no_embedding_best.pth'
             self.net.load_state_dict(torch.load(model_weights_path))
             print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
         """
     def training_step(self, batch, batch_idx):
 
         current_epoch = self.current_epoch
-        beta = self.initial_beta + (self.max_beta - self.initial_beta) * min(1, current_epoch / self.epochs_to_max)
-
+        alpha = self.initial_alpha + (self.max_alpha - self.initial_alpha) * min(1, current_epoch / self.epochs_to_max)
         logits, labels = self.fast_adapt(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
         classification_loss = F.cross_entropy(logits, labels)
 
@@ -203,7 +208,7 @@ class ProtoNetModule(LightningModule):
         triplet_loss = self.net.triplet_loss(anchor_feature, positive_feature, negative_feature)
         
         # 전체 손실 
-        total_loss =  triplet_loss + classification_loss 
+        total_loss =  alpha * triplet_loss + classification_loss 
         self.train_loss(total_loss)
         self.train_acc(logits, labels)
         self.train_mixed_up_acc(mixedup_logits, mixedup_labels)

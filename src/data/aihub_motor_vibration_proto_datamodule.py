@@ -18,9 +18,10 @@ from src.data.datasets.aihub_motor_vibraion_proto import Motor_Vibration
 from src.utils.meta_utils import FewShotBatchSampler_ProtoNet
 import learn2learn as l2l
 from learn2learn.data.transforms import NWays, KShots, LoadData, RemapLabels
+
 class Motor_Vibration_Meta_DataModule(LightningDataModule):
     def __init__(self,
-                test_motor_power: List[str] = ["11kW"],
+                test_motor_power: List[str] = ["5.5kW"],
                 val_motor_power: List[str] = [],
                 sampling_frequency_before_upsample: str = 4000,
                 sampling_frequency_after_upsample: str = 8192,
@@ -34,7 +35,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
                 csv_num_to_use: int = 100,
                 data_dir: str = "/home/mongoose01/mongooseai/data/cms/open_source/AI_hub/기계시설물 고장 예지 센서/Training/vibration",
                 N_WAY = 4,
-                K_SHOT = 10,
+                K_SHOT = 4,
                 num_workers: int = 4,
                 pin_memory: bool = False,
                 persistent_workers: bool = False):
@@ -71,7 +72,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
         train_tasks = l2l.data.Taskset(
             self.data_train,
             task_transforms=train_transforms,
-            num_tasks= 200,
+            num_tasks= 50,
         )
         return DataLoader(dataset = train_tasks,
                           num_workers = self.hparams.num_workers,
@@ -89,7 +90,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
         valid_tasks = l2l.data.Taskset(
             self.data_val,
             task_transforms=valid_transforms,
-            num_tasks=200,
+            num_tasks=50,
         )
         return DataLoader(dataset = valid_tasks,
                           num_workers = self.hparams.num_workers,
@@ -107,7 +108,7 @@ class Motor_Vibration_Meta_DataModule(LightningDataModule):
         test_tasks = l2l.data.Taskset(
             self.data_test,
             task_transforms = test_transforms,
-            num_tasks=200,
+            num_tasks=50,
         )
         return DataLoader(dataset = test_tasks,
                           num_workers = self.hparams.num_workers,

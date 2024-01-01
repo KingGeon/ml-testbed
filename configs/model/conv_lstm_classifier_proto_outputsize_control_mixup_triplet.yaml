@@ -45,8 +45,7 @@ net:
   output_size: 5
 
 initial_beta: 0.1
-max_beta: 0.99
 epochs_to_max: 20
-epochs_to_min: 10
 initial_alpha: 0.99
 max_alpha:  0.01
+gamma : 0.9

@@ -26,10 +26,10 @@ class Discriminator(nn.Module):
         return x
     
 class TripletLoss(nn.Module):
-    def __init__(self, margin=2):
+    def __init__(self, margin=3):
         super(TripletLoss, self).__init__()
         self.margin = margin
-        self.triplet_loss = nn.TripletMarginLoss(margin=self.margin, p=2)
+        self.triplet_loss = nn.TripletMarginWithDistanceLoss(distance_function=nn.PairwiseDistance(),margin=self.margin)
 
     def forward(self, anchor, positive, negative):
         return self.triplet_loss(anchor, positive, negative)
@@ -48,11 +48,10 @@ class AE(nn.Module):
         # 디코더: 잠재 공간을 원래의 데이터로 복원
         self.decoder = nn.Sequential(
             nn.Linear(hidden_size // 4, hidden_size // 2),
-            nn.ReLU(),
+            nn.SiLU(),
             nn.Linear(hidden_size // 2, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, input_size),
-            nn.SiLU()
+            nn.SiLU(),
+            nn.Linear(hidden_size, input_size)
         )
 
     def forward(self, x):
@@ -381,6 +380,7 @@ class CONV_LSTM_Classifier(nn.Module):
         
         # Since LSTM is bidirectional, we concatenate the outputs, hence the hidden size is doubled
         self.metadata_embedding = nn.Linear(1,lstm_hidden_size)
+        self.motor_embedding = nn.Linear(1,lstm_hidden_size)
         self.dense1 = nn.Linear(lstm_hidden_size  + 16 * int(self.use_stat) + 1 * (topk_freq + 4) * int(self.use_fft_stat), dense1_out_size)  # Hidden size is doubled because LSTM is bidirectional
         # Dense layers
         self.dense2 = nn.Linear(dense1_out_size, dense2_out_size)
@@ -388,7 +388,7 @@ class CONV_LSTM_Classifier(nn.Module):
 
         self.triplet_loss = TripletLoss()
         self.discriminator = Discriminator(dense1_out_size,discriminator_dense1_outsize,discriminator_dense2_outsize)
-        self.ae = AE(self.in_length,256)      
+        self.ae = AE(self.in_length,lstm_hidden_size * 4)      
     def embedding(self,z):
         
         z = self.silu(self.dense2(z))
@@ -473,12 +473,13 @@ class CONV_LSTM_Classifier(nn.Module):
         return dummy_output.shape[-1]
     
     def forward(self, x):
-        power = x[:,0,-1].unsqueeze(-1)
-        eofft = x[:,:,-2].unsqueeze(-1)
-        envelope_spectrum = x[:,:,-3].unsqueeze(-1)
-        envelope = x[:,:,-4].unsqueeze(-1)
+        motor = x[:,0,-1].unsqueeze(-1)
+        power = x[:,0,-2].unsqueeze(-1)
+        eofft = x[:,:,-3].unsqueeze(-1)
+        envelope_spectrum = x[:,:,-4].unsqueeze(-1)
+        envelope = x[:,:,-5].unsqueeze(-1)
         
-        y = x[:,:,1:-4]
+        y = x[:,:,1:-5]
         x = x[:,:,0].unsqueeze(-1)
         fft = self.fft_real(x, 1)
         fft_bandpassed =self.fft_real(y, 1)
@@ -688,6 +689,7 @@ class CONV_LSTM_Classifier(nn.Module):
         z = self.silu(self.batchnorm6(self.conv6(z)))
         z, _ = self.lstm(z)
         z = z[:, -1, :]  # Take the last time step
+        z = z + self.motor_embedding(motor)
         if self.metadata_embedding:
             z = z + self.metadata_embedding(power)
         if self.use_fft_stat:

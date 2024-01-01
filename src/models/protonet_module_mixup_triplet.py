@@ -16,21 +16,20 @@ import random
 import math
 from src.data.datasets.aihub_motor_vibraion_proto import *
 import matplotlib.pyplot as plt
-
+from notebooks.test import fscore
 
 class ProtoNetModule(LightningModule):
     def __init__(self,
                  net: torch.nn.Module,
                  optimizer: torch.optim.Optimizer,
                  scheduler: torch.optim.lr_scheduler,
-                 initial_beta: float = 0.1,
-                 max_beta: float = 0.99,
-                 epochs_to_max: float = 20,
-                 epochs_to_min: float = 10,
-                 initial_alpha: float = 0.99,
-                 max_alpha: float = 0.01,
+                 initial_beta:float = 0.4,
+                 max_alpha: float = 0.5,
+                 epochs_to_max: int =  10,
+                 initial_alpha: float = 0.01,
+                 gamma: float = 0.9,
                  N_WAY: int = 4,
-                 K_SHOT: int = 10):
+                 K_SHOT: int = 4):
         super().__init__()
         self.save_hyperparameters(logger=False) # self.hparams activation
         self.net = net
@@ -58,13 +57,11 @@ class ProtoNetModule(LightningModule):
         self.val_mixup_acc_best = MaxMetric()
         self.test_acc_best = MaxMetric()
 
-        self.initial_beta = initial_beta  # 초기 beta 값
-        self.max_beta = max_beta     # 최대 beta 값
+        self.initial_beta = initial_beta  # 초기 beta 값  # 최대 beta 값
         self.epochs_to_max = epochs_to_max
-        self.epochs_to_min = epochs_to_min
         self.initial_alpha = initial_alpha # 초기 alpha 값
         self.max_alpha = max_alpha      # 최대 alpha 값
-
+        self.gamma = gamma
     def pairwise_distances_logits(self, a, b):
         n = a.shape[0]
         m = b.shape[0]
@@ -137,6 +134,7 @@ class ProtoNetModule(LightningModule):
         query_indices = torch.from_numpy(~support_indices)
         support_indices = torch.from_numpy(support_indices)
         support = embeddings[support_indices]
+        #support = model.fault_classfier(model.forward(self.net.ae.forward(data[support_indices].transpose(2,1)).transpose(2,1)))
         support = support.reshape(ways, shot, -1).mean(dim=1)
         query = embeddings[query_indices]
         labels = labels[query_indices].long()
@@ -171,7 +169,20 @@ class ProtoNetModule(LightningModule):
             b = torch.tensor(label_list)
             return a, b
  
-    
+    def train_ae(self, batch, device=None):
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            data, labels = batch
+            data = data.to(device)
+            data = data.squeeze(0)
+            re = self.net.ae.forward(data.transpose(2,1))
+            re[:,-1,:] = data.transpose(2,1)[:,-1,:]
+            criterion = torch.nn.L1Loss()
+            re_error = criterion(re, data.transpose(2,1))
+            return re_error
+
+
+
     def fast_adapt_mixedup_data(self, model, batch, ways, shot, mode, metric=None, device=None):
         if metric is None:
             metric = self.pairwise_distances_logits
@@ -199,7 +210,7 @@ class ProtoNetModule(LightningModule):
         support_data = data[support_indices]
         support_label = labels[support_indices]
         mixed_data, _ = self.make_mixedup(support_data,support_label)
-        alpha = 0.95 + torch.rand(1).to(device) * 0.1
+        alpha = 0.99 + torch.rand(1).to(device) * 0.02
         mixed_imbedding = model.forward(mixed_data * alpha)
         mixed_imbedding = model.fault_classfier(mixed_imbedding)
         proto = mixed_imbedding.reshape(ways, 1, -1).mean(dim=1)
@@ -208,19 +219,10 @@ class ProtoNetModule(LightningModule):
         logits = self.cosine_similarity(query, proto)
 
         
-        reconstructed_mixed_data = self.net.ae.forward(mixed_data.transpose(2,1))
-        criterion = torch.nn.L1Loss()
-        reconstruction_error = criterion(reconstructed_mixed_data, mixed_data.transpose(2,1))
-        mixed_imbedding = model.forward(reconstructed_mixed_data.transpose(2,1))
-        mixed_imbedding = model.fault_classfier(mixed_imbedding)
-        proto = mixed_imbedding.reshape(ways, 1, -1).mean(dim=1)
-        query = embeddings[query_indices]
-        reconstructed_logits = self.cosine_similarity(query, proto)
-        
-        return logits, labels, reconstructed_logits, reconstruction_error
+        return logits, labels
+    
     
     def setup(self, stage=None):
-        # 저장된 가중치 불러오기
         """
         if stage == 'fit' or stage is None:
             model_weights_path = '/home/geon/dev_geon/ml-testbed/src/models/components/ProtoNet_mixup_triplet_no_embedding.pth'
@@ -229,14 +231,18 @@ class ProtoNetModule(LightningModule):
     def training_step(self, batch, batch_idx):
 
         current_epoch = self.current_epoch
+        
+        gamma = self.gamma
         beta = self.initial_beta #+ (self.max_beta - self.initial_beta) * min(1, current_epoch / self.epochs_to_max)
         alpha = self.initial_alpha + (self.max_alpha - self.initial_alpha) * min(1, current_epoch / self.epochs_to_max)
+
         logits, labels = self.fast_adapt_cos(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
         classification_loss = F.cross_entropy(logits, labels)
+        logits_dis, labels_dis = self.fast_adapt_distance(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        classification_loss_dis = F.cross_entropy(logits_dis, labels_dis)
 
-        mixedup_logits, mixedup_labels, reconstructed_logits, reconstruction_error  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
+        mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
         mixedup_classification_loss_1 = F.cross_entropy(mixedup_logits, mixedup_labels)
-        mixedup_classification_loss_2 =  F.cross_entropy(reconstructed_logits, mixedup_labels)
         
         """
         mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "train")
@@ -260,19 +266,17 @@ class ProtoNetModule(LightningModule):
         triplet_loss = self.net.triplet_loss(anchor_feature, positive_feature, negative_feature)
         
         # 전체 손실
-        total_loss = mixedup_classification_loss_2 + reconstruction_error + alpha * triplet_loss + (1-alpha)*(beta * classification_loss + (1-beta) * mixedup_classification_loss_1) # 0.25*mixedup_classification_loss_1 + 0.25*mixedup_classification_loss_2 + 0.25*mixedup_classification_loss_3 + 0.25*mixedup_classification_loss_4
+        total_loss = alpha * triplet_loss + (1-alpha)*(gamma * classification_loss_dis +(1 - gamma)*((1-beta) * classification_loss + beta * mixedup_classification_loss_1)) # 0.25*mixedup_classification_loss_1 + 0.25*mixedup_classification_loss_2 + 0.25*mixedup_classification_loss_3 + 0.25*mixedup_classification_loss_4
             
 
         self.train_loss(total_loss)
-        self.train_acc(logits, labels)
+        self.train_acc(logits_dis, labels_dis)
         self.train_mixed_up_acc(mixedup_logits, mixedup_labels)
-        self.train_reconst_mixed_up_acc(reconstructed_logits, mixedup_labels)
         #self.train_fake_acc(fake_logit, fake_labels)
         self.log('train/loss', self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log('train/acc', self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
         #self.log('train_fake/acc', self.train_fake_acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log('train_mixup/acc', self.train_mixed_up_acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log('train_reconst_mixup/acc', self.train_reconst_mixed_up_acc, on_step=False, on_epoch=True, prog_bar=True)
         return total_loss
 
     
@@ -293,7 +297,7 @@ class ProtoNetModule(LightningModule):
         self.val_loss(classification_loss)
         self.val_acc(logits, labels)
         #self.val_mixup_acc(mixedup_logits, mixedup_labels)
-        self.log('val/loss', self.val_loss, on_step=False, on_epoch=True, prog_bar=False)
+        self.log('val/loss', self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log('val/acc', self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
         #self.log('val_mixup/acc', self.val_mixup_acc, on_step=False, on_epoch=True, prog_bar=True)
     
@@ -310,7 +314,6 @@ class ProtoNetModule(LightningModule):
         logits, labels = self.fast_adapt_cos(self.net, batch, self.N_WAY, self.K_SHOT, mode = "test")
         torch.save(self.net.state_dict(), '/home/geon/dev_geon/ml-testbed/src/models/components/ProtoNet_mixup_triplet_no_embedding.pth')
         #mixedup_logits, mixedup_labels  = self.fast_adapt_mixedup_data(self.net, batch, self.N_WAY, self.K_SHOT, mode = "test")
-    
         classification_loss = F.cross_entropy(logits, labels)
         self.test_loss(classification_loss)
         self.test_acc(logits, labels)
@@ -320,8 +323,8 @@ class ProtoNetModule(LightningModule):
         #self.log('test_mixup/acc', self.test_mixup_acc, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_end(self):
-        
-        pass
+        f1 = fscore()
+        self.log('f1-score', f1, on_step=False, on_epoch=True, prog_bar=True)
 
     def configure_optimizers(self):
         optimizer=self.hparams.optimizer(params=self.parameters())
